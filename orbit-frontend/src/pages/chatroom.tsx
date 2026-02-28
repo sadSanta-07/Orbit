@@ -1,452 +1,629 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { io, Socket } from "socket.io-client";
 
+/* ─── constants ─────────────────────────────────────────────────────────── */
 const API_BASE = "https://bcc1-59-144-72-89.ngrok-free.app";
 
-/* ─── types ───────────────────────────────────────────────────────────────── */
-interface Room {
-    id: string;
-    name: string;
-    description?: string;
-    memberCount?: number;
-    coverUrl?: string;
+const hdrs = () => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("orbit_token") || ""}`,
+    "ngrok-skip-browser-warning": "true",
+});
+const getUsername = () => localStorage.getItem("orbit_username") || "User";
+const getToken = () => localStorage.getItem("orbit_token") || "";
+
+/* ─── JDoodle language map ───────────────────────────────────────────────── */
+const LANGUAGES: { label: string; jdoodle: string; ext: string }[] = [
+    { label: "Python", jdoodle: "python3", ext: ".py" },
+    { label: "JavaScript", jdoodle: "nodejs", ext: ".js" },
+    { label: "C++", jdoodle: "cpp17", ext: ".cpp" },
+    { label: "C", jdoodle: "c", ext: ".c" },
+    { label: "Java", jdoodle: "java", ext: ".java" },
+    { label: "TypeScript", jdoodle: "typescript", ext: ".ts" },
+];
+
+/* ─── types ─────────────────────────────────────────────────────────────── */
+interface Room { _id: string; name: string; roomCode: string; members: string[]; createdBy: string; }
+interface Msg {
+    _id: string; roomId: string;
+    senderId: { _id: string; username: string } | string;
+    content: string; createdAt: string;
+    _senderName?: string;
 }
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
-function getToken() {
-    return localStorage.getItem("orbit_token") || "";
+function senderName(msg: Msg, me: string) {
+    if (msg._senderName) return msg._senderName;
+    if (typeof msg.senderId === "object") return msg.senderId.username ?? "Unknown";
+    return me; // real-time own messages
 }
-function getUsername() {
-    return localStorage.getItem("orbit_username") || "User";
-}
+const isMe = (msg: Msg, me: string) => senderName(msg, me) === me;
+const isOrbitMsg = (msg: Msg, me: string) => senderName(msg, me) === "Orbit";
 
-/* ─── Create Room Modal ───────────────────────────────────────────────────── */
-function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-    const [name, setName] = useState("");
-    const [description, setDescription] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+/* ══════════════════════════════════════════════════════════════════════════
+   CODE EDITOR PANEL
+══════════════════════════════════════════════════════════════════════════ */
+interface CodeEditorProps { roomCode: string; socket: Socket | null; }
 
-    const handleCreate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError("");
-        try {
-            const res = await fetch(`${API_BASE}/api/rooms/create`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${getToken()}`,
-                    "ngrok-skip-browser-warning": "true",
-                },
-                body: JSON.stringify({ name, description }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                setError(data?.message || "Failed to create room.");
-            } else {
-                onCreated();
-                onClose();
-            }
-        } catch {
-            setError("Network error.");
-        } finally {
-            setLoading(false);
+function CodeEditor({ roomCode, socket }: CodeEditorProps) {
+    const [code, setCode] = useState("// Start coding here…\n");
+    const [langIdx, setLangIdx] = useState(0);
+    const [output, setOutput] = useState("");
+    const [running, setRunning] = useState(false);
+    const [showLangMenu, setShowLangMenu] = useState(false);
+    const suppressSync = useRef(false);
+    const taRef = useRef<HTMLTextAreaElement>(null);
+
+    /* listen: sync code from other users */
+    useEffect(() => {
+        if (!socket) return;
+        const onSyncCode = ({ code: incoming }: { code: string }) => {
+            suppressSync.current = true;
+            setCode(incoming);
+            setTimeout(() => { suppressSync.current = false; }, 50);
+        };
+        const onCodeChange = ({ code: incoming }: { code: string }) => {
+            suppressSync.current = true;
+            setCode(incoming);
+            setTimeout(() => { suppressSync.current = false; }, 50);
+        };
+        socket.on("sync_code", onSyncCode);
+        socket.on("code_change", onCodeChange);
+        return () => { socket.off("sync_code", onSyncCode); socket.off("code_change", onCodeChange); };
+    }, [socket]);
+
+    /* emit code changes (debounced via useCallback) */
+    const emitChange = useCallback((newCode: string) => {
+        if (!socket || suppressSync.current) return;
+        socket.emit("code_change", { roomCode, code: newCode });
+    }, [socket, roomCode]);
+
+    const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const val = e.target.value;
+        setCode(val);
+        emitChange(val);
+    };
+
+    /* Tab key support */
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === "Tab") {
+            e.preventDefault();
+            const ta = taRef.current!;
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            const newVal = code.substring(0, start) + "    " + code.substring(end);
+            setCode(newVal);
+            emitChange(newVal);
+            requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 4; });
+        }
+        if (e.key === "Escape") {
+            emitChange(code); // save on Esc
         }
     };
 
+    /* run code via backend */
+    const runCode = async () => {
+        if (running || !code.trim()) return;
+        setRunning(true);
+        setOutput("Running…");
+        try {
+            const res = await fetch(`${API_BASE}/api/compile`, {
+                method: "POST",
+                headers: hdrs(),
+                body: JSON.stringify({ code, language: LANGUAGES[langIdx].jdoodle }),
+            });
+            const data = await res.json();
+            if (res.ok && data.output) {
+                const out = data.output;
+                setOutput(
+                    out.output ??
+                    out.stderr ??
+                    out.error ??
+                    JSON.stringify(out, null, 2)
+                );
+            } else {
+                setOutput(data?.message || "Compilation failed.");
+            }
+        } catch {
+            setOutput("Network error — could not reach compile server.");
+        } finally { setRunning(false); }
+    };
+
     return (
-        <div
-            style={{
-                position: "fixed", inset: 0, zIndex: 100,
-                background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-            }}
-            onClick={onClose}
-        >
-            <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                    background: "#1a1a1a",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: "14px",
-                    padding: "32px",
-                    width: "360px",
-                    boxShadow: "0 20px 60px rgba(0,0,0,0.7)",
-                    animation: "fadeUp 0.22s ease",
-                    position: "relative",
-                }}
-            >
-                <button
-                    onClick={onClose}
-                    style={{ position: "absolute", top: 14, right: 16, background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 20, cursor: "pointer" }}
-                >×</button>
-
-                <h2 style={{ color: "#fff", fontSize: 20, fontWeight: 700, margin: "0 0 6px" }}>Create a Room</h2>
-                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, margin: "0 0 24px" }}>
-                    Rooms are deleted automatically if inactive for 24 hrs.
-                </p>
-
-                <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    <div>
-                        <label style={labelStyle}>Room Name</label>
-                        <input
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="e.g. Code Crushers"
-                            required
-                            style={inputStyle}
-                        />
-                    </div>
-                    <div>
-                        <label style={labelStyle}>Description</label>
-                        <textarea
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            placeholder="What's this room about?"
-                            rows={3}
-                            style={{ ...inputStyle, resize: "none", lineHeight: 1.5 }}
-                        />
-                    </div>
-                    {error && <p style={{ color: "#f87171", fontSize: 12, margin: 0 }}>{error}</p>}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", borderLeft: "1px solid rgba(255,255,255,0.07)", overflow: "hidden", minWidth: 0 }}>
+            {/* header */}
+            <div style={{ height: 52, borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
+                <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Code editor</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
+                    {/* language selector */}
                     <button
-                        type="submit"
-                        disabled={loading}
-                        style={{
-                            background: loading ? "rgba(255,255,255,0.5)" : "#fff",
-                            color: "#000",
-                            border: "none",
-                            borderRadius: 8,
-                            padding: "11px 0",
-                            fontWeight: 700,
-                            fontSize: 14,
-                            cursor: loading ? "not-allowed" : "pointer",
-                        }}
+                        onClick={() => setShowLangMenu(v => !v)}
+                        style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, color: "rgba(255,255,255,0.7)", fontSize: 12, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit" }}
                     >
-                        {loading ? "Creating…" : "Create Room"}
+                        {LANGUAGES[langIdx].label} ▾
                     </button>
-                </form>
+                    {showLangMenu && (
+                        <div style={{ position: "absolute", top: "100%", right: 72, marginTop: 4, background: "#1e1e1e", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, overflow: "hidden", zIndex: 50, minWidth: 130, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                            {LANGUAGES.map((l, i) => (
+                                <button key={l.jdoodle} onClick={() => { setLangIdx(i); setShowLangMenu(false); }}
+                                    style={{ display: "block", width: "100%", background: i === langIdx ? "rgba(255,255,255,0.1)" : "transparent", border: "none", color: "#fff", textAlign: "left", padding: "8px 14px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                                    {l.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {/* run button */}
+                    <button onClick={runCode} disabled={running}
+                        style={{ background: running ? "#444" : "#22c55e", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, fontSize: 13, padding: "5px 16px", cursor: running ? "not-allowed" : "pointer", transition: "background .2s" }}>
+                        {running ? "…" : "Run"}
+                    </button>
+                </div>
             </div>
-            <style>{`@keyframes fadeUp { from { opacity:0;transform:translateY(16px); } to { opacity:1;transform:translateY(0); } }`}</style>
+
+            {/* editor + output split */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                {/* textarea editor */}
+                <textarea
+                    ref={taRef}
+                    value={code}
+                    onChange={handleCodeChange}
+                    onKeyDown={handleKeyDown}
+                    spellCheck={false}
+                    style={{
+                        flex: output ? "0 0 60%" : 1,
+                        background: "#111", color: "#e2e8f0",
+                        border: "none", outline: "none", resize: "none",
+                        padding: "16px 20px", fontSize: 13.5,
+                        fontFamily: "'Fira Code','Cascadia Code','Consolas','Courier New',monospace",
+                        lineHeight: 1.65, tabSize: 4,
+                        transition: "flex .2s",
+                    }}
+                />
+
+                {/* output panel */}
+                {output && (
+                    <div style={{ flex: 1, borderTop: "1px solid rgba(255,255,255,0.07)", background: "#0a0a0a", padding: "12px 20px", overflowY: "auto", minHeight: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Output</span>
+                            <button onClick={() => setOutput("")} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>×</button>
+                        </div>
+                        <pre style={{ color: "#4ade80", fontFamily: "monospace", fontSize: 13, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {output}
+                        </pre>
+                    </div>
+                )}
+            </div>
+
+            {/* footer hint */}
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", padding: "8px 20px", color: "rgba(255,255,255,0.2)", fontSize: 11, display: "flex", justifyContent: "flex-end", flexShrink: 0 }}>
+                • press esc for exit ( code will be saved auto )
+            </div>
         </div>
     );
 }
 
-const labelStyle: React.CSSProperties = { display: "block", color: "rgba(255,255,255,0.55)", fontSize: 12, marginBottom: 6 };
-const inputStyle: React.CSSProperties = {
-    width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 8, padding: "10px 12px", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box",
-};
+/* ══════════════════════════════════════════════════════════════════════════
+   CHAT VIEW — 3-column: room panel | chatbox | code editor
+══════════════════════════════════════════════════════════════════════════ */
+function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
+    const myUsername = getUsername();
+    const token = getToken();
 
-/* ─── Room Card ───────────────────────────────────────────────────────────── */
-function RoomCard({ room }: { room: Room }) {
-    const [hovered, setHovered] = useState(false);
+    const [messages, setMessages] = useState<Msg[]>([]);
+    const [input, setInput] = useState("");
+    const [onlineUsers, setOnlineUsers] = useState<{ username: string; socketId: string }[]>([]);
+    const [loadingMsgs, setLoadingMsgs] = useState(true);
+    const [codeOpen, setCodeOpen] = useState(false);
+
+    const socketRef = useRef<Socket | null>(null);
+    const bottomRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const seenIds = useRef<Set<string>>(new Set());
+
+    /* load history */
+    useEffect(() => {
+        const load = async () => {
+            setLoadingMsgs(true);
+            try {
+                const res = await fetch(`${API_BASE}/api/messages/${room._id}`, { headers: hdrs() });
+                const data = await res.json();
+                if (res.ok) {
+                    const msgs: Msg[] = data.data ?? [];
+                    msgs.forEach(m => seenIds.current.add(m._id));
+                    setMessages(msgs);
+                }
+            } catch { /* silent */ }
+            finally { setLoadingMsgs(false); }
+        };
+        load();
+    }, [room._id]);
+
+    /* socket */
+    useEffect(() => {
+        const socket = io(API_BASE, { auth: { token }, transports: ["websocket", "polling"] });
+        socketRef.current = socket;
+
+        socket.on("connect", () => socket.emit("join_room", room.roomCode));
+
+        socket.on("receive_message", (msg: Msg) => {
+            if (seenIds.current.has(msg._id)) return;
+            seenIds.current.add(msg._id);
+            setMessages(prev => [...prev, msg]);
+        });
+
+        socket.on("online_users", (users: { username: string; socketId: string }[]) => setOnlineUsers(users));
+
+        return () => { socket.disconnect(); };
+    }, [room.roomCode, token]);
+
+    /* auto-scroll */
+    useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+    const send = (e: React.FormEvent) => {
+        e.preventDefault();
+        const text = input.trim();
+        if (!text || !socketRef.current) return;
+        socketRef.current.emit("send_message", { roomId: room._id, roomCode: room.roomCode, content: text });
+        setInput("");
+        inputRef.current?.focus();
+    };
+
     return (
-        <div
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-            style={{
-                background: "#1a1a1a",
-                border: hovered ? "1px solid rgba(255,255,255,0.2)" : "1px solid rgba(255,255,255,0.07)",
-                borderRadius: 12,
-                overflow: "hidden",
-                width: 180,
-                cursor: "pointer",
-                transition: "border-color 0.2s, transform 0.2s, box-shadow 0.2s",
-                transform: hovered ? "translateY(-3px)" : "none",
-                boxShadow: hovered ? "0 12px 32px rgba(0,0,0,0.5)" : "none",
-            }}
-        >
-            {/* cover image */}
-            <div style={{ height: 110, background: room.coverUrl ? `url(${room.coverUrl}) center/cover` : "linear-gradient(135deg,#2a1a3e,#1a2a3e)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {!room.coverUrl && (
-                    <span style={{ fontSize: 32, opacity: 0.4 }}>💬</span>
-                )}
+        <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden" }}>
+
+            {/* ── col 1: room panel ── */}
+            <div style={{ width: 195, background: "#111", borderRight: "1px solid rgba(255,255,255,0.07)", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
+                {/* cover */}
+                <div style={{ height: 145, background: "linear-gradient(135deg,#7c3aed55,#0ea5e944)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 46, opacity: .65 }}>💬</span>
+                </div>
+                {/* meta */}
+                <div style={{ padding: "12px 14px 8px" }}>
+                    <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: "0 0 2px" }}>{room.name}</p>
+                    <p style={{ color: "rgba(255,255,255,.28)", fontSize: 10, margin: 0, fontFamily: "monospace" }}>#{room.roomCode}</p>
+                </div>
+                <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,.06)", margin: "0 14px 8px" }} />
+                {/* online members */}
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 8px" }}>
+                    {onlineUsers.length === 0
+                        ? <p style={{ color: "rgba(255,255,255,.2)", fontSize: 11, padding: "6px 6px" }}>No one online…</p>
+                        : onlineUsers.map((u, i) => {
+                            const me = u.username === myUsername;
+                            return (
+                                <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, background: me ? "#16a34a" : "rgba(255,255,255,0.06)", borderRadius: 8, padding: "7px 9px", marginBottom: 5, transition: "background .15s" }}>
+                                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: `hsl(${u.username.charCodeAt(0) * 37},55%,50%)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+                                        {u.username.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span style={{ color: "#fff", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.username}</span>
+                                </div>
+                            );
+                        })
+                    }
+                </div>
+                {/* delete/back */}
+                <div style={{ padding: "8px 8px 18px" }}>
+                    <button onClick={onBack}
+                        style={{ width: "100%", background: "rgba(180,30,30,.2)", border: "1px solid rgba(220,50,50,.3)", borderRadius: 8, color: "#f87171", padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        Delete Room
+                    </button>
+                </div>
             </div>
 
-            {/* info */}
-            <div style={{ padding: "10px 12px 12px" }}>
-                <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: "0 0 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {room.name}
-                </p>
-                {room.description && (
-                    <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 11, margin: "0 0 10px", lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                        {room.description}
-                    </p>
-                )}
+            {/* ── col 2: chatbox ── */}
+            <div style={{ width: codeOpen ? 340 : undefined, flex: codeOpen ? "0 0 340px" : 1, display: "flex", flexDirection: "column", overflow: "hidden", transition: "flex .2s", minWidth: 0 }}>
+                {/* header */}
+                <div style={{ height: 52, borderBottom: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
+                    <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Chatbox</span>
+                    <span style={{ background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 6, padding: "3px 10px", color: "rgba(255,255,255,.55)", fontSize: 12 }}>{room.name}</span>
+                </div>
+                {/* messages */}
+                <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+                    {loadingMsgs && <p style={{ color: "rgba(255,255,255,.22)", fontSize: 13, textAlign: "center", marginTop: 40 }}>Loading messages…</p>}
+                    {!loadingMsgs && messages.length === 0 && (
+                        <p style={{ color: "rgba(255,255,255,.18)", fontSize: 13, textAlign: "center", marginTop: 40 }}>
+                            No messages yet — say something! 👋<br />
+                            <span style={{ fontSize: 11, display: "block", marginTop: 6, color: "rgba(255,255,255,.1)" }}>Tip: say "@orbit" or "error" / "bug" to get AI help</span>
+                        </p>
+                    )}
+                    {messages.map(msg => {
+                        const name = senderName(msg, myUsername);
+                        const mine = isMe(msg, myUsername);
+                        const orbit = isOrbitMsg(msg, myUsername);
+                        return (
+                            <div key={msg._id} style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
+                                <span style={{ fontSize: 10, marginBottom: 3, color: orbit ? "#a78bfa" : "rgba(255,255,255,.38)", fontWeight: orbit ? 700 : 400 }}>
+                                    {orbit ? "🤖 Orbit AI" : name}
+                                </span>
+                                <div style={{
+                                    background: mine ? "#fff" : orbit ? "rgba(124,58,237,.18)" : "rgba(255,255,255,.07)",
+                                    color: mine ? "#111" : "#fff",
+                                    border: orbit ? "1px solid rgba(124,58,237,.4)" : "none",
+                                    borderRadius: mine ? "14px 14px 4px 14px" : "4px 14px 14px 14px",
+                                    padding: "9px 13px", fontSize: 13, maxWidth: 300, lineHeight: 1.55, wordBreak: "break-word",
+                                }}>
+                                    {msg.content}
+                                </div>
+                                <span style={{ fontSize: 9, color: "rgba(255,255,255,.18)", marginTop: 3 }}>
+                                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                            </div>
+                        );
+                    })}
+                    <div ref={bottomRef} />
+                </div>
+                {/* input bar */}
+                <form onSubmit={send} style={{ borderTop: "1px solid rgba(255,255,255,.07)", padding: "11px 16px", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                    <input
+                        ref={inputRef}
+                        value={input}
+                        onChange={e => setInput(e.target.value)}
+                        placeholder="Type Something...."
+                        style={{ flex: 1, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: "10px 14px", color: "#fff", fontSize: 13, outline: "none", fontFamily: "inherit" }}
+                    />
+                    <button type="button" onClick={() => setCodeOpen(v => !v)}
+                        style={{
+                            background: codeOpen ? "rgba(124,58,237,.25)" : "#fff",
+                            color: codeOpen ? "#a78bfa" : "#000",
+                            border: codeOpen ? "1px solid rgba(124,58,237,.5)" : "none",
+                            borderRadius: 10, padding: "10px 16px", fontWeight: 700, fontSize: 12,
+                            cursor: "pointer", whiteSpace: "nowrap", transition: "all .2s",
+                        }}>
+                        {codeOpen ? "Close codebox" : "Open codebox"}
+                    </button>
+                </form>
+            </div>
+
+            {/* ── col 3: code editor (toggled) ── */}
+            {codeOpen && (
+                <CodeEditor roomCode={room.roomCode} socket={socketRef.current} />
+            )}
+        </div>
+    );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LOBBY CARDS
+══════════════════════════════════════════════════════════════════════════ */
+function RoomCard({ room, onClick }: { room: Room; onClick: () => void }) {
+    const [hov, setHov] = useState(false);
+    const pal = ["#7c3aed", "#0ea5e9", "#f59e0b", "#10b981", "#ef4444", "#ec4899"];
+    const col = pal[room.name.charCodeAt(0) % pal.length];
+    return (
+        <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick}
+            style={{ background: "#1a1a1a", border: `1px solid ${hov ? "rgba(255,255,255,.22)" : "rgba(255,255,255,.07)"}`, borderRadius: 12, overflow: "hidden", width: 180, cursor: "pointer", transition: "all .2s", transform: hov ? "translateY(-4px)" : "none", boxShadow: hov ? "0 16px 40px rgba(0,0,0,.5)" : "none" }}>
+            <div style={{ height: 110, background: `linear-gradient(135deg,${col}66,${col}22)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 36, opacity: .7 }}>💬</span>
+            </div>
+            <div style={{ padding: "10px 12px 14px" }}>
+                <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: "0 0 3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{room.name}</p>
+                <p style={{ color: "rgba(255,255,255,.3)", fontSize: 11, margin: "0 0 10px", fontFamily: "monospace" }}>#{room.roomCode}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ display: "flex" }}>
-                        {[1, 2, 3].map((i) => (
-                            <div key={i} style={{
-                                width: 18, height: 18, borderRadius: "50%", background: `hsl(${i * 80},50%,55%)`,
-                                border: "2px solid #1a1a1a", marginLeft: i === 1 ? 0 : -6,
-                            }} />
-                        ))}
-                    </div>
-                    <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>
-                        {room.memberCount ?? 1} Member{(room.memberCount ?? 1) !== 1 ? "s" : ""}
-                    </span>
+                    {[0, 1, 2].map(i => <div key={i} style={{ width: 18, height: 18, borderRadius: "50%", background: pal[(i + 2) % pal.length], border: "2px solid #1a1a1a", marginLeft: i === 0 ? 0 : -6 }} />)}
+                    <span style={{ color: "rgba(255,255,255,.4)", fontSize: 11 }}>{room.members.length} Member{room.members.length !== 1 ? "s" : ""}</span>
                 </div>
             </div>
         </div>
     );
 }
 
-/* ─── Add Room Card (dashed) ──────────────────────────────────────────────── */
-function AddCard({ onClick }: { onClick: () => void }) {
-    const [hovered, setHovered] = useState(false);
+function DashedCard({ label, onClick }: { label: string; onClick: () => void }) {
+    const [hov, setHov] = useState(false);
     return (
-        <div
-            onClick={onClick}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-            style={{
-                width: 180, height: 192,
-                border: `2px dashed ${hovered ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.2)"}`,
-                borderRadius: 12,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: "pointer",
-                color: hovered ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.35)",
-                fontSize: 15, fontWeight: 600,
-                transition: "all 0.2s",
-                background: hovered ? "rgba(255,255,255,0.03)" : "transparent",
-                transform: hovered ? "translateY(-3px)" : "none",
-            }}
-        >
-            Add +
+        <div onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+            style={{ width: 180, height: 192, border: `2px dashed ${hov ? "rgba(255,255,255,.4)" : "rgba(255,255,255,.17)"}`, borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", color: hov ? "rgba(255,255,255,.7)" : "rgba(255,255,255,.3)", fontSize: 13, fontWeight: 600, transition: "all .2s", background: hov ? "rgba(255,255,255,.03)" : "transparent", transform: hov ? "translateY(-4px)" : "none" }}>
+            <span style={{ fontSize: 22 }}>+</span>
+            <span>{label}</span>
         </div>
     );
 }
 
-/* ─── Sidebar ─────────────────────────────────────────────────────────────── */
-const navItems = ["Lobby", "Profile", "Settings", "Contact Us"] as const;
-type NavItem = typeof navItems[number];
+/* ══════════════════════════════════════════════════════════════════════════
+   MODALS
+══════════════════════════════════════════════════════════════════════════ */
+const mT: React.CSSProperties = { color: "#fff", fontSize: 20, fontWeight: 700, margin: "0 0 6px" };
+const mS: React.CSSProperties = { color: "rgba(255,255,255,.4)", fontSize: 12, margin: "0 0 20px" };
+const ci: React.CSSProperties = { width: "100%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box" };
+const cl: React.CSSProperties = { display: "block", color: "rgba(255,255,255,.55)", fontSize: 12, marginBottom: 6 };
 
-function Sidebar({ active, setActive, onLogout }: { active: NavItem; setActive: (n: NavItem) => void; onLogout: () => void }) {
+function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
     return (
-        <aside style={{
-            width: 180, minHeight: "100vh",
-            background: "#111", borderRight: "1px solid rgba(255,255,255,0.07)",
-            display: "flex", flexDirection: "column",
-            padding: "0 0 24px",
-            fontFamily: "'Inter','Segoe UI',sans-serif",
-        }}>
-            {/* logo */}
+        <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#161616", border: "1px solid rgba(255,255,255,.1)", borderRadius: 16, padding: "32px 28px", width: 360, boxShadow: "0 24px 80px rgba(0,0,0,.7)", position: "relative", animation: "fadeUp .22s ease" }}>
+                {children}
+            </div>
+            <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}`}</style>
+        </div>
+    );
+}
+
+function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (r: Room) => void }) {
+    const [name, setName] = useState(""); const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
+    const submit = async (e: React.FormEvent) => {
+        e.preventDefault(); setLoading(true); setErr("");
+        try {
+            const res = await fetch(`${API_BASE}/api/rooms/create`, { method: "POST", headers: hdrs(), body: JSON.stringify({ name }) });
+            const data = await res.json();
+            if (!res.ok) setErr(data?.message || "Failed"); else { onCreated(data.data); onClose(); }
+        } catch { setErr("Network error"); } finally { setLoading(false); }
+    };
+    return (
+        <Modal onClose={onClose}>
+            <button onClick={onClose} style={{ position: "absolute", top: 14, right: 16, background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 20, cursor: "pointer" }}>×</button>
+            <h2 style={mT}>Create a Room</h2><p style={mS}>Rooms auto-delete after 24 hrs of inactivity.</p>
+            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div><label style={cl}>Room Name</label><input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Code Crushers" required style={ci} /></div>
+                {err && <p style={{ color: "#f87171", fontSize: 12, margin: 0 }}>{err}</p>}
+                <button type="submit" disabled={loading} style={{ background: loading ? "rgba(255,255,255,.5)" : "#fff", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer" }}>{loading ? "Creating…" : "Create Room"}</button>
+            </form>
+        </Modal>
+    );
+}
+
+function JoinModal({ onClose, onJoined }: { onClose: () => void; onJoined: (r: Room) => void }) {
+    const [code, setCode] = useState(""); const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
+    const submit = async (e: React.FormEvent) => {
+        e.preventDefault(); setLoading(true); setErr("");
+        try {
+            const res = await fetch(`${API_BASE}/api/rooms/join`, { method: "POST", headers: hdrs(), body: JSON.stringify({ roomCode: code.toUpperCase() }) });
+            const data = await res.json();
+            if (!res.ok) setErr(data?.message || "Room not found"); else { onJoined(data.data); onClose(); }
+        } catch { setErr("Network error"); } finally { setLoading(false); }
+    };
+    return (
+        <Modal onClose={onClose}>
+            <button onClick={onClose} style={{ position: "absolute", top: 14, right: 16, background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 20, cursor: "pointer" }}>×</button>
+            <h2 style={mT}>Join a Room</h2><p style={mS}>Enter the 6-character code from your friend.</p>
+            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div><label style={cl}>Room Code</label><input value={code} onChange={e => setCode(e.target.value)} placeholder="AB12CD" maxLength={6} required style={{ ...ci, textTransform: "uppercase", letterSpacing: 4, fontWeight: 700 }} /></div>
+                {err && <p style={{ color: "#f87171", fontSize: 12, margin: 0 }}>{err}</p>}
+                <button type="submit" disabled={loading} style={{ background: loading ? "rgba(255,255,255,.5)" : "#fff", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer" }}>{loading ? "Joining…" : "Join Room"}</button>
+            </form>
+        </Modal>
+    );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════════════════════════════════════ */
+const NAV = ["Lobby", "Profile", "Settings", "Contact Us"] as const;
+type Nav = typeof NAV[number];
+
+function Sidebar({ active, setActive, onLogout }: { active: Nav; setActive: (n: Nav) => void; onLogout: () => void }) {
+    return (
+        <aside style={{ width: 180, minHeight: "100vh", background: "#111", borderRight: "1px solid rgba(255,255,255,.07)", display: "flex", flexDirection: "column", flexShrink: 0 }}>
             <div style={{ padding: "20px 20px 28px", display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ color: "#fff", fontWeight: 800, fontSize: 20 }}>Orbit</span>
                 <span style={{ fontSize: 20 }}>🌀</span>
             </div>
-
-            {/* nav links */}
             <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, padding: "0 10px" }}>
-                {navItems.map((item) => (
-                    <button
-                        key={item}
-                        onClick={() => setActive(item)}
-                        style={{
-                            background: active === item ? "rgba(255,255,255,0.1)" : "transparent",
-                            border: "none",
-                            borderRadius: 8,
-                            color: active === item ? "#fff" : "rgba(255,255,255,0.55)",
-                            textAlign: "left",
-                            padding: "10px 14px",
-                            fontSize: 14,
-                            fontWeight: active === item ? 600 : 400,
-                            cursor: "pointer",
-                            transition: "background 0.15s, color 0.15s",
-                        }}
-                        onMouseEnter={(e) => { if (active !== item) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)"; }}
-                        onMouseLeave={(e) => { if (active !== item) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                    >
-                        {item}
-                    </button>
+                {NAV.map(item => (
+                    <button key={item} onClick={() => setActive(item)}
+                        style={{ background: active === item ? "rgba(255,255,255,.1)" : "transparent", border: "none", borderRadius: 8, color: active === item ? "#fff" : "rgba(255,255,255,.5)", textAlign: "left", padding: "10px 14px", fontSize: 14, fontWeight: active === item ? 600 : 400, cursor: "pointer", transition: "all .15s" }}
+                        onMouseEnter={e => { if (active !== item) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,.05)"; }}
+                        onMouseLeave={e => { if (active !== item) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >{item}</button>
                 ))}
             </nav>
-
-            {/* Report / Logout */}
-            <div style={{ padding: "0 10px", display: "flex", flexDirection: "column", gap: 8 }}>
-                <button
-                    style={{
-                        background: "rgba(180,30,30,0.25)", border: "1px solid rgba(220,50,50,0.3)",
-                        borderRadius: 8, color: "#f87171",
-                        padding: "10px 14px", fontSize: 14, fontWeight: 600,
-                        cursor: "pointer", textAlign: "left",
-                    }}
-                >
-                    Report
-                </button>
-                <button
-                    onClick={onLogout}
-                    style={{
-                        background: "transparent", border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 8, color: "rgba(255,255,255,0.35)",
-                        padding: "8px 14px", fontSize: 12,
-                        cursor: "pointer", textAlign: "left",
-                    }}
-                >
-                    Log out
-                </button>
+            <div style={{ padding: "0 10px 24px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <button style={{ background: "rgba(180,30,30,.25)", border: "1px solid rgba(220,50,50,.3)", borderRadius: 8, color: "#f87171", padding: "10px 14px", fontSize: 14, fontWeight: 600, cursor: "pointer", textAlign: "left" }}>Report</button>
+                <button onClick={onLogout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, color: "rgba(255,255,255,.35)", padding: "8px 14px", fontSize: 12, cursor: "pointer", textAlign: "left" }}>Log out</button>
             </div>
         </aside>
     );
 }
 
-/* ─── Chatroom (Lobby) Page ───────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   PAGE
+══════════════════════════════════════════════════════════════════════════ */
 export default function Chatroom() {
     const navigate = useNavigate();
     const username = getUsername();
-    const [activeNav, setActiveNav] = useState<NavItem>("Lobby");
+    const [nav, setNav] = useState<Nav>("Lobby");
     const [rooms, setRooms] = useState<Room[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [activeRoom, setActiveRoom] = useState<Room | null>(null);
     const [showCreate, setShowCreate] = useState(false);
-    const [loadingRooms, setLoadingRooms] = useState(true);
+    const [showJoin, setShowJoin] = useState(false);
 
-    /* fetch user's rooms */
+    useEffect(() => { if (!getToken()) navigate("/"); }, [navigate]);
+
     const fetchRooms = async () => {
-        setLoadingRooms(true);
+        setLoading(true);
         try {
-            const res = await fetch(`${API_BASE}/api/rooms/my`, {
-                headers: {
-                    "Authorization": `Bearer ${getToken()}`,
-                    "ngrok-skip-browser-warning": "true",
-                },
-            });
-            if (res.ok) {
-                const data = await res.json();
-                // API may return array or { rooms: [] }, handle both
-                setRooms(Array.isArray(data) ? data : data.rooms ?? []);
-            }
-        } catch {
-            /* silently fail — show empty state */
-        } finally {
-            setLoadingRooms(false);
-        }
+            const res = await fetch(`${API_BASE}/api/rooms/my`, { headers: hdrs() });
+            const data = await res.json();
+            if (res.ok) setRooms(Array.isArray(data.data) ? data.data : []);
+        } catch { /* silent */ }
+        finally { setLoading(false); }
     };
+    useEffect(() => { fetchRooms(); }, []);
 
-    useEffect(() => {
-        const token = getToken();
-        if (!token) {
-            navigate("/");
-        } else {
-            fetchRooms();
-        }
-    }, [navigate]);
-
-    const handleLogout = () => {
-        localStorage.removeItem("orbit_token");
-        localStorage.removeItem("orbit_username");
+    const logout = () => {
+        ["orbit_token", "orbit_username", "orbit_userId"].forEach(k => localStorage.removeItem(k));
         navigate("/");
     };
 
     return (
-        <div style={{
-            display: "flex",
-            minHeight: "100vh",
-            background: "#0d0d0d",
-            fontFamily: "'Inter','Segoe UI',sans-serif",
-        }}>
-            {/* ── Sidebar ── */}
-            <Sidebar active={activeNav} setActive={setActiveNav} onLogout={handleLogout} />
+        <div style={{ display: "flex", height: "100vh", background: "#0d0d0d", fontFamily: "'Inter','Segoe UI',sans-serif", overflow: "hidden" }}>
+            <Sidebar active={nav} setActive={n => { setNav(n); setActiveRoom(null); }} onLogout={logout} />
 
-            {/* ── Main ── */}
-            <main style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-                {/* top bar */}
-                <header style={{
-                    height: 60,
-                    borderBottom: "1px solid rgba(255,255,255,0.07)",
-                    display: "flex", alignItems: "center", justifyContent: "flex-end",
-                    padding: "0 28px", gap: 12,
-                }}>
-                    <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>hie</span>
-                    <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{username}</span>
-                    <div style={{
-                        width: 36, height: 36, borderRadius: "50%",
-                        background: "linear-gradient(135deg,#7c3aed,#db2777)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 16,
-                    }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+                {/* header */}
+                <header style={{ height: 58, borderBottom: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 28px", gap: 12, flexShrink: 0 }}>
+                    <span style={{ color: "rgba(255,255,255,.4)", fontSize: 14 }}>hie</span>
+                    <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontStyle: "italic" }}>{username}</span>
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#7c3aed,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff" }}>
                         {username.charAt(0).toUpperCase()}
                     </div>
                 </header>
 
-                {/* content */}
-                <div style={{ flex: 1, padding: "28px 32px", overflowY: "auto" }}>
-                    {activeNav === "Lobby" && (
-                        <>
-                            {loadingRooms ? (
-                                <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginTop: 40, textAlign: "center" }}>
-                                    Loading rooms…
+                {/* lobby */}
+                {nav === "Lobby" && !activeRoom && (
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                        <div style={{ flex: 1, padding: "28px 32px", overflowY: "auto" }}>
+                            {loading
+                                ? <p style={{ color: "rgba(255,255,255,.3)", textAlign: "center", marginTop: 60, fontSize: 14 }}>Loading rooms…</p>
+                                : <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+                                    {rooms.map(r => <RoomCard key={r._id} room={r} onClick={() => setActiveRoom(r)} />)}
+                                    <DashedCard label="Create" onClick={() => setShowCreate(true)} />
+                                    <DashedCard label="Join" onClick={() => setShowJoin(true)} />
                                 </div>
-                            ) : (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
-                                    {rooms.map((room) => (
-                                        <RoomCard key={room.id} room={room} />
-                                    ))}
-                                    <AddCard onClick={() => setShowCreate(true)} />
+                            }
+                        </div>
+                        <footer style={{ borderTop: "1px solid rgba(255,255,255,.07)", padding: "11px 32px", color: "rgba(255,255,255,.2)", fontSize: 11, flexShrink: 0 }}>
+                            • groups with no members or inactivity will be deleted in 24hrs automatically
+                        </footer>
+                    </div>
+                )}
+
+                {/* chat */}
+                {nav === "Lobby" && activeRoom && (
+                    <div style={{ flex: 1, display: "flex", overflow: "hidden", minWidth: 0 }}>
+                        <ChatView room={activeRoom} onBack={() => setActiveRoom(null)} />
+                    </div>
+                )}
+
+                {/* profile */}
+                {nav === "Profile" && (
+                    <div style={{ padding: 32, color: "#fff" }}>
+                        <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Profile</h2>
+                        <div style={{ background: "#1a1a1a", borderRadius: 14, padding: 28, border: "1px solid rgba(255,255,255,.08)", maxWidth: 440 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+                                <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg,#7c3aed,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700 }}>{username.charAt(0).toUpperCase()}</div>
+                                <div>
+                                    <p style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>{username}</p>
+                                    <p style={{ color: "rgba(255,255,255,.4)", fontSize: 12, margin: "4px 0 0" }}>Orbit Member · {rooms.length} room{rooms.length !== 1 ? "s" : ""}</p>
                                 </div>
-                            )}
-                        </>
-                    )}
-
-                    {activeNav === "Profile" && (
-                        <div style={{ color: "#fff", maxWidth: 480 }}>
-                            <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 16 }}>Profile</h2>
-                            <div style={{ background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid rgba(255,255,255,0.08)" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-                                    <div style={{
-                                        width: 56, height: 56, borderRadius: "50%",
-                                        background: "linear-gradient(135deg,#7c3aed,#db2777)",
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        fontSize: 24, fontWeight: 700,
-                                    }}>
-                                        {username.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div>
-                                        <p style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>{username}</p>
-                                        <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, margin: "4px 0 0" }}>Orbit Member</p>
-                                    </div>
-                                </div>
-                                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>More profile settings coming soon.</p>
                             </div>
+                            <p style={{ color: "rgba(255,255,255,.4)", fontSize: 13 }}>More profile settings coming soon.</p>
                         </div>
-                    )}
+                    </div>
+                )}
 
-                    {activeNav === "Settings" && (
-                        <div style={{ color: "#fff", maxWidth: 480 }}>
-                            <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 16 }}>Settings</h2>
-                            <div style={{ background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid rgba(255,255,255,0.08)" }}>
-                                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Settings panel coming soon.</p>
-                            </div>
+                {/* settings */}
+                {nav === "Settings" && (
+                    <div style={{ padding: 32, color: "#fff" }}>
+                        <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Settings</h2>
+                        <div style={{ background: "#1a1a1a", borderRadius: 14, padding: 28, border: "1px solid rgba(255,255,255,.08)", maxWidth: 440 }}>
+                            <p style={{ color: "rgba(255,255,255,.4)", fontSize: 13 }}>Settings panel coming soon.</p>
                         </div>
-                    )}
+                    </div>
+                )}
 
-                    {activeNav === "Contact Us" && (
-                        <div style={{ color: "#fff", maxWidth: 480 }}>
-                            <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 16 }}>Contact Us</h2>
-                            <div style={{ background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid rgba(255,255,255,0.08)" }}>
-                                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Reach us at <span style={{ color: "#7c3aed" }}>support@orbit.dev</span></p>
-                            </div>
+                {/* contact */}
+                {nav === "Contact Us" && (
+                    <div style={{ padding: 32, color: "#fff" }}>
+                        <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Contact Us</h2>
+                        <div style={{ background: "#1a1a1a", borderRadius: 14, padding: 28, border: "1px solid rgba(255,255,255,.08)", maxWidth: 440 }}>
+                            <p style={{ color: "rgba(255,255,255,.4)", fontSize: 13 }}>Reach us at <span style={{ color: "#7c3aed" }}>support@orbit.dev</span></p>
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
+            </div>
 
-                {/* footer */}
-                <footer style={{
-                    borderTop: "1px solid rgba(255,255,255,0.07)",
-                    padding: "12px 32px",
-                    color: "rgba(255,255,255,0.25)",
-                    fontSize: 11,
-                }}>
-                    • groups with no members or inactivity will be deleted in 24hrs automatically
-                </footer>
-            </main>
-
-            {/* ── Create Room Modal ── */}
-            {showCreate && (
-                <CreateRoomModal
-                    onClose={() => setShowCreate(false)}
-                    onCreated={fetchRooms}
-                />
-            )}
+            {showCreate && <CreateModal onClose={() => setShowCreate(false)} onCreated={r => { setRooms(p => [...p, r]); setActiveRoom(r); }} />}
+            {showJoin && <JoinModal onClose={() => setShowJoin(false)} onJoined={r => { setRooms(p => p.find(x => x._id === r._id) ? p : [...p, r]); setActiveRoom(r); }} />}
         </div>
     );
 }

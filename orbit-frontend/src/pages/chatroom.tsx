@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 
-/* ─── constants ─────────────────────────────────────────────────────────── */
+
 const API_BASE = "https://orbit-ozih.onrender.com";
 
 const hdrs = () => ({
@@ -12,7 +12,7 @@ const hdrs = () => ({
 const getUsername = () => localStorage.getItem("orbit_username") || "User";
 const getToken = () => localStorage.getItem("orbit_token") || "";
 
-/* ─── JDoodle language map ───────────────────────────────────────────────── */
+
 const LANGUAGES: { label: string; jdoodle: string; ext: string }[] = [
     { label: "Python", jdoodle: "python3", ext: ".py" },
     { label: "JavaScript", jdoodle: "nodejs", ext: ".js" },
@@ -22,7 +22,7 @@ const LANGUAGES: { label: string; jdoodle: string; ext: string }[] = [
     { label: "TypeScript", jdoodle: "typescript", ext: ".ts" },
 ];
 
-/* ─── types ─────────────────────────────────────────────────────────────── */
+
 interface Room { _id: string; name: string; roomCode: string; members: string[]; createdBy: string; }
 interface Msg {
     _id: string; roomId: string;
@@ -31,18 +31,19 @@ interface Msg {
     _senderName?: string;
 }
 
-/* ─── helpers ─────────────────────────────────────────────────────────────── */
-function senderName(msg: Msg, me: string) {
+
+
+function resolveName(
+    msg: Msg,
+    idMap: Map<string, string>,
+): string {
     if (msg._senderName) return msg._senderName;
     if (typeof msg.senderId === "object") return msg.senderId.username ?? "Unknown";
-    return me; // real-time own messages
-}
-const isMe = (msg: Msg, me: string) => senderName(msg, me) === me;
-const isOrbitMsg = (msg: Msg, me: string) => senderName(msg, me) === "Orbit";
 
-/* ══════════════════════════════════════════════════════════════════════════
-   CODE EDITOR PANEL
-══════════════════════════════════════════════════════════════════════════ */
+    return idMap.get(msg.senderId as string) ?? "User";
+}
+
+
 interface CodeEditorProps { roomCode: string; socket: Socket | null; }
 
 function CodeEditor({ roomCode, socket }: CodeEditorProps) {
@@ -54,7 +55,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
     const suppressSync = useRef(false);
     const taRef = useRef<HTMLTextAreaElement>(null);
 
-    /* listen: sync code from other users */
+
     useEffect(() => {
         if (!socket) return;
         const onSyncCode = ({ code: incoming }: { code: string }) => {
@@ -72,7 +73,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
         return () => { socket.off("sync_code", onSyncCode); socket.off("code_change", onCodeChange); };
     }, [socket]);
 
-    /* emit code changes (debounced via useCallback) */
+
     const emitChange = useCallback((newCode: string) => {
         if (!socket || suppressSync.current) return;
         socket.emit("code_change", { roomCode, code: newCode });
@@ -84,7 +85,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
         emitChange(val);
     };
 
-    /* Tab key support */
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Tab") {
             e.preventDefault();
@@ -97,11 +98,11 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
             requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 4; });
         }
         if (e.key === "Escape") {
-            emitChange(code); // save on Esc
+            emitChange(code);
         }
     };
 
-    /* run code via backend */
+
     const runCode = async () => {
         if (running || !code.trim()) return;
         setRunning(true);
@@ -131,11 +132,11 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
 
     return (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", borderLeft: "1px solid rgba(255,255,255,0.07)", overflow: "hidden", minWidth: 0 }}>
-            {/* header */}
+
             <div style={{ height: 52, borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
                 <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Code editor</span>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
-                    {/* language selector */}
+
                     <button
                         onClick={() => setShowLangMenu(v => !v)}
                         style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, color: "rgba(255,255,255,0.7)", fontSize: 12, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit" }}
@@ -152,7 +153,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
                             ))}
                         </div>
                     )}
-                    {/* run button */}
+
                     <button onClick={runCode} disabled={running}
                         style={{ background: running ? "#444" : "#22c55e", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, fontSize: 13, padding: "5px 16px", cursor: running ? "not-allowed" : "pointer", transition: "background .2s" }}>
                         {running ? "…" : "Run"}
@@ -160,9 +161,9 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
                 </div>
             </div>
 
-            {/* editor + output split */}
+
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                {/* textarea editor */}
+
                 <textarea
                     ref={taRef}
                     value={code}
@@ -180,7 +181,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
                     }}
                 />
 
-                {/* output panel */}
+
                 {output && (
                     <div style={{ flex: 1, borderTop: "1px solid rgba(255,255,255,0.07)", background: "#0a0a0a", padding: "12px 20px", overflowY: "auto", minHeight: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -194,7 +195,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
                 )}
             </div>
 
-            {/* footer hint */}
+
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", padding: "8px 20px", color: "rgba(255,255,255,0.2)", fontSize: 11, display: "flex", justifyContent: "flex-end", flexShrink: 0 }}>
                 • press esc for exit ( code will be saved auto )
             </div>
@@ -202,9 +203,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
     );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   CHAT VIEW — 3-column: room panel | chatbox | code editor
-══════════════════════════════════════════════════════════════════════════ */
+
 function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
     const myUsername = getUsername();
     const token = getToken();
@@ -220,7 +219,9 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
     const inputRef = useRef<HTMLInputElement>(null);
     const seenIds = useRef<Set<string>>(new Set());
 
-    /* load history */
+    const idMap = useRef<Map<string, string>>(new Map());
+
+
     useEffect(() => {
         const load = async () => {
             setLoadingMsgs(true);
@@ -229,16 +230,22 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                 const data = await res.json();
                 if (res.ok) {
                     const msgs: Msg[] = data.data ?? [];
-                    msgs.forEach(m => seenIds.current.add(m._id));
+
+                    msgs.forEach(m => {
+                        seenIds.current.add(m._id);
+                        if (typeof m.senderId === "object" && m.senderId._id) {
+                            idMap.current.set(m.senderId._id, m.senderId.username);
+                        }
+                    });
                     setMessages(msgs);
                 }
-            } catch { /* silent */ }
+            } catch {  }
             finally { setLoadingMsgs(false); }
         };
         load();
     }, [room._id]);
 
-    /* socket */
+
     useEffect(() => {
         const socket = io(API_BASE, { auth: { token }, transports: ["websocket", "polling"] });
         socketRef.current = socket;
@@ -256,7 +263,7 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
         return () => { socket.disconnect(); };
     }, [room.roomCode, token]);
 
-    /* auto-scroll */
+
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
     const send = (e: React.FormEvent) => {
@@ -271,19 +278,19 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
     return (
         <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden" }}>
 
-            {/* ── col 1: room panel ── */}
+
             <div style={{ width: 195, background: "#111", borderRight: "1px solid rgba(255,255,255,0.07)", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
-                {/* cover */}
+
                 <div style={{ height: 145, background: "linear-gradient(135deg,#7c3aed55,#0ea5e944)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <span style={{ fontSize: 46, opacity: .65 }}>💬</span>
                 </div>
-                {/* meta */}
+
                 <div style={{ padding: "12px 14px 8px" }}>
                     <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: "0 0 2px" }}>{room.name}</p>
                     <p style={{ color: "rgba(255,255,255,.28)", fontSize: 10, margin: 0, fontFamily: "monospace" }}>#{room.roomCode}</p>
                 </div>
                 <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,.06)", margin: "0 14px 8px" }} />
-                {/* online members */}
+
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 8px" }}>
                     {onlineUsers.length === 0
                         ? <p style={{ color: "rgba(255,255,255,.2)", fontSize: 11, padding: "6px 6px" }}>No one online…</p>
@@ -300,7 +307,7 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                         })
                     }
                 </div>
-                {/* delete/back */}
+
                 <div style={{ padding: "8px 8px 18px" }}>
                     <button onClick={onBack}
                         style={{ width: "100%", background: "rgba(180,30,30,.2)", border: "1px solid rgba(220,50,50,.3)", borderRadius: 8, color: "#f87171", padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
@@ -309,14 +316,14 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                 </div>
             </div>
 
-            {/* ── col 2: chatbox ── */}
+
             <div style={{ width: codeOpen ? 340 : undefined, flex: codeOpen ? "0 0 340px" : 1, display: "flex", flexDirection: "column", overflow: "hidden", transition: "flex .2s", minWidth: 0 }}>
-                {/* header */}
+
                 <div style={{ height: 52, borderBottom: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
                     <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Chatbox</span>
                     <span style={{ background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 6, padding: "3px 10px", color: "rgba(255,255,255,.55)", fontSize: 12 }}>{room.name}</span>
                 </div>
-                {/* messages */}
+
                 <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
                     {loadingMsgs && <p style={{ color: "rgba(255,255,255,.22)", fontSize: 13, textAlign: "center", marginTop: 40 }}>Loading messages…</p>}
                     {!loadingMsgs && messages.length === 0 && (
@@ -326,9 +333,9 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                         </p>
                     )}
                     {messages.map(msg => {
-                        const name = senderName(msg, myUsername);
-                        const mine = isMe(msg, myUsername);
-                        const orbit = isOrbitMsg(msg, myUsername);
+                        const name = resolveName(msg, idMap.current);
+                        const mine = name === myUsername;
+                        const orbit = name === "Orbit";
                         return (
                             <div key={msg._id} style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
                                 <span style={{ fontSize: 10, marginBottom: 3, color: orbit ? "#a78bfa" : "rgba(255,255,255,.38)", fontWeight: orbit ? 700 : 400 }}>
@@ -351,7 +358,7 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                     })}
                     <div ref={bottomRef} />
                 </div>
-                {/* input bar */}
+
                 <form onSubmit={send} style={{ borderTop: "1px solid rgba(255,255,255,.07)", padding: "11px 16px", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
                     <input
                         ref={inputRef}
@@ -373,7 +380,7 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                 </form>
             </div>
 
-            {/* ── col 3: code editor (toggled) ── */}
+
             {codeOpen && (
                 <CodeEditor roomCode={room.roomCode} socket={socketRef.current} />
             )}
@@ -381,9 +388,7 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
     );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   LOBBY CARDS
-══════════════════════════════════════════════════════════════════════════ */
+
 function RoomCard({ room, onClick }: { room: Room; onClick: () => void }) {
     const [hov, setHov] = useState(false);
     const pal = ["#7c3aed", "#0ea5e9", "#f59e0b", "#10b981", "#ef4444", "#ec4899"];
@@ -417,9 +422,7 @@ function DashedCard({ label, onClick }: { label: string; onClick: () => void }) 
     );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   MODALS
-══════════════════════════════════════════════════════════════════════════ */
+
 const mT: React.CSSProperties = { color: "#fff", fontSize: 20, fontWeight: 700, margin: "0 0 6px" };
 const mS: React.CSSProperties = { color: "rgba(255,255,255,.4)", fontSize: 12, margin: "0 0 20px" };
 const ci: React.CSSProperties = { width: "100%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 12px", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box" };
@@ -482,9 +485,7 @@ function JoinModal({ onClose, onJoined }: { onClose: () => void; onJoined: (r: R
     );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   SIDEBAR
-══════════════════════════════════════════════════════════════════════════ */
+
 const NAV = ["Lobby", "Profile", "Settings", "Contact Us"] as const;
 type Nav = typeof NAV[number];
 
@@ -512,9 +513,7 @@ function Sidebar({ active, setActive, onLogout }: { active: Nav; setActive: (n: 
     );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   PAGE
-══════════════════════════════════════════════════════════════════════════ */
+
 export default function Chatroom() {
     const navigate = useNavigate();
     const username = getUsername();
@@ -533,7 +532,7 @@ export default function Chatroom() {
             const res = await fetch(`${API_BASE}/api/rooms/my`, { headers: hdrs() });
             const data = await res.json();
             if (res.ok) setRooms(Array.isArray(data.data) ? data.data : []);
-        } catch { /* silent */ }
+        } catch {  }
         finally { setLoading(false); }
     };
     useEffect(() => { fetchRooms(); }, []);
@@ -548,7 +547,7 @@ export default function Chatroom() {
             <Sidebar active={nav} setActive={n => { setNav(n); setActiveRoom(null); }} onLogout={logout} />
 
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-                {/* header */}
+
                 <header style={{ height: 58, borderBottom: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 28px", gap: 12, flexShrink: 0 }}>
                     <span style={{ color: "rgba(255,255,255,.4)", fontSize: 14 }}>hie</span>
                     <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontStyle: "italic" }}>{username}</span>
@@ -557,7 +556,7 @@ export default function Chatroom() {
                     </div>
                 </header>
 
-                {/* lobby */}
+
                 {nav === "Lobby" && !activeRoom && (
                     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                         <div style={{ flex: 1, padding: "28px 32px", overflowY: "auto" }}>
@@ -576,14 +575,14 @@ export default function Chatroom() {
                     </div>
                 )}
 
-                {/* chat */}
+
                 {nav === "Lobby" && activeRoom && (
                     <div style={{ flex: 1, display: "flex", overflow: "hidden", minWidth: 0 }}>
                         <ChatView room={activeRoom} onBack={() => setActiveRoom(null)} />
                     </div>
                 )}
 
-                {/* profile */}
+
                 {nav === "Profile" && (
                     <div style={{ padding: 32, color: "#fff" }}>
                         <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Profile</h2>
@@ -600,7 +599,7 @@ export default function Chatroom() {
                     </div>
                 )}
 
-                {/* settings */}
+
                 {nav === "Settings" && (
                     <div style={{ padding: 32, color: "#fff" }}>
                         <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Settings</h2>
@@ -610,7 +609,7 @@ export default function Chatroom() {
                     </div>
                 )}
 
-                {/* contact */}
+
                 {nav === "Contact Us" && (
                     <div style={{ padding: 32, color: "#fff" }}>
                         <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Contact Us</h2>

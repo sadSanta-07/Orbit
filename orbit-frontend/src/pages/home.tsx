@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import saturnBg from "../assets/saturn.jpg";
 
-/* ─── tiny avatar stack for the 400K badge ─────────────────────────────── */
+
 const avatars = [
     "https://i.pravatar.cc/32?img=1",
     "https://i.pravatar.cc/32?img=2",
@@ -13,7 +13,7 @@ const techItems = ["Google", "Microsoft", "Stripe", "Amazon"];
 
 const API_BASE = "https://orbit-ozih.onrender.com";
 
-/* ─── Register Modal ────────────────────────────────────────────────────── */
+
 function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
     const [form, setForm] = useState({ email: "", username: "", password: "" });
     const [loading, setLoading] = useState(false);
@@ -31,7 +31,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         setError("");
         setSuccess("");
         try {
-            // Step 1: Register
+
             const res = await fetch(`${API_BASE}/api/auth/register`, {
                 method: "POST",
                 headers: {
@@ -44,7 +44,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             if (!res.ok) {
                 setError(data?.message || data?.error || "Registration failed. Please try again.");
             } else {
-                // Step 2: Auto-login to get the JWT token (backend only issues token on login)
+
                 setSuccess("Account created! Logging you in…");
                 const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
                     method: "POST",
@@ -62,7 +62,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                     setSuccess("All set! Redirecting…");
                     setTimeout(() => onSuccess(), 600);
                 } else {
-                    // Registration worked but auto-login failed — still redirect, user can login manually
+
                     localStorage.setItem("orbit_username", form.username);
                     setSuccess("Registered! Redirecting…");
                     setTimeout(() => onSuccess(), 600);
@@ -76,13 +76,13 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     };
 
     return (
-        /* backdrop */
+
         <div
             className="fixed inset-0 z-50 flex items-center justify-end"
             style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(2px)" }}
             onClick={onClose}
         >
-            {/* card — click inside should NOT close */}
+
             <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
@@ -97,7 +97,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                     animation: "slideIn 0.25s ease",
                 }}
             >
-                {/* close × */}
+
                 <button
                     onClick={onClose}
                     style={{
@@ -126,7 +126,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                 <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.08)", marginBottom: "22px" }} />
 
                 <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {/* Email */}
+
                     <div>
                         <label style={labelStyle}>Email</label>
                         <input
@@ -140,7 +140,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                         />
                     </div>
 
-                    {/* Username */}
+
                     <div>
                         <label style={labelStyle}>username</label>
                         <input
@@ -154,7 +154,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                         />
                     </div>
 
-                    {/* Password */}
+
                     <div>
                         <label style={labelStyle}>password</label>
                         <input
@@ -168,7 +168,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                         />
                     </div>
 
-                    {/* Error / Success */}
+
                     {error && (
                         <p style={{ color: "#f87171", fontSize: "12px", margin: 0 }}>{error}</p>
                     )}
@@ -176,7 +176,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                         <p style={{ color: "#4ade80", fontSize: "12px", margin: 0 }}>{success}</p>
                     )}
 
-                    {/* Buttons */}
+
                     <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
                         <button
                             type="submit"
@@ -256,7 +256,7 @@ const inputStyle: React.CSSProperties = {
     boxSizing: "border-box",
 };
 
-/* ─── Login Modal ────────────────────────────────────────────────────────── */
+
 function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
     const [form, setForm] = useState({ email: "", password: "" });
     const [loading, setLoading] = useState(false);
@@ -315,7 +315,7 @@ function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
                     animation: "slideIn 0.25s ease",
                 }}
             >
-                {/* close × */}
+
                 <button
                     onClick={onClose}
                     style={{ position: "absolute", top: "14px", right: "16px", background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: "20px", cursor: "pointer", lineHeight: 1 }}
@@ -394,7 +394,6 @@ function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
     );
 }
 
-/* ─── Home Page ─────────────────────────────────────────────────────────── */
 export default function Home() {
     const navigate = useNavigate();
     const [showRegister, setShowRegister] = useState(false);
@@ -410,23 +409,18 @@ export default function Home() {
                 fontFamily: "'Inter', 'Segoe UI', sans-serif",
             }}
         >
-            {/* dark overlay */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/80 z-0" />
 
-            {/* ── NAVBAR ──────────────────────────────────────────────────────────── */}
             <nav className="relative z-10 flex items-center justify-between px-8 py-5">
-                {/* left links */}
                 <div className="flex gap-8 text-sm text-white/85">
                     <a href="#" className="hover:text-white transition-colors">About us</a>
                     <a href="#" className="hover:text-white transition-colors">Help</a>
                 </div>
 
-                {/* center logo */}
                 <span className="absolute left-1/2 -translate-x-1/2 text-white text-xl font-semibold tracking-wide">
                     Orbit
                 </span>
 
-                {/* right links */}
                 <div className="flex gap-6 text-sm text-white/85 items-center">
                     <button
                         onClick={() => setShowRegister(true)}
@@ -457,7 +451,6 @@ export default function Home() {
                 </div>
             </nav>
 
-            {/* ── HERO SECTION ───────────────────────────────────────────────────── */}
             <main className="relative z-10 flex flex-col justify-end min-h-[calc(100vh-140px)] pb-24 px-8">
                 <h1 className="text-white text-4xl sm:text-5xl font-bold leading-tight max-w-md mb-4 drop-shadow-lg">
                     Beyond Distractions. Enter<br />
@@ -507,7 +500,6 @@ export default function Home() {
                 </div>
             </main>
 
-            {/* ── TECH STRIP ─────────────────────────────────────────────────────── */}
             <div className="relative z-10 border-t border-white/10 bg-black/50 backdrop-blur-sm px-8 py-4">
                 <div className="flex items-center justify-around flex-wrap gap-4">
                     {techItems.map((item, i) => (
@@ -525,7 +517,7 @@ export default function Home() {
                 </div>
             </div>
 
-            {/* ── REGISTER MODAL ──────────────────────────────────────────────────── */}
+
             {showRegister && (
                 <RegisterModal
                     onClose={() => setShowRegister(false)}
@@ -533,7 +525,7 @@ export default function Home() {
                 />
             )}
 
-            {/* ── LOGIN MODAL ─────────────────────────────────────────────────────── */}
+
             {showLogin && (
                 <LoginModal
                     onClose={() => setShowLogin(false)}

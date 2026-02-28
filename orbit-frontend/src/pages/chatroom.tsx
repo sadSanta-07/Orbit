@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
+import tubeImg from "../assets/tube.jpg";
 
 
 const API_BASE = "https://orbit-ozih.onrender.com";
@@ -275,17 +276,14 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
         inputRef.current?.focus();
     };
 
-    const palFn = (name: string) => {
-        const pal = ["#7c3aed", "#0ea5e9", "#f59e0b", "#10b981", "#ef4444", "#ec4899"];
-        return pal[name.charCodeAt(0) % pal.length];
-    };
+
 
     return (
         <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden" }}>
 
             <div style={{ width: 195, background: "#111", borderRight: "1px solid rgba(255,255,255,0.07)", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
-                <div style={{ height: 145, background: `linear-gradient(135deg,${palFn(room.name)}55,${palFn(room.name)}22)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <span style={{ fontSize: 50, opacity: .55 }}>💬</span>
+                <div style={{ height: 145, overflow: "hidden", flexShrink: 0 }}>
+                    <img src={roomCover(room.name)} alt={room.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
                 </div>
 
                 <div style={{ padding: "12px 14px 6px" }}>
@@ -373,15 +371,18 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
 }
 
 
+const COVERS = ["/cock.jpg", "/meow.jpg"];
+function roomCover(name: string) { return COVERS[name.charCodeAt(0) % COVERS.length]; }
+
 function RoomCard({ room, onClick }: { room: Room; onClick: () => void }) {
     const [hov, setHov] = useState(false);
     const pal = ["#7c3aed", "#0ea5e9", "#f59e0b", "#10b981", "#ef4444", "#ec4899"];
-    const col = pal[room.name.charCodeAt(0) % pal.length];
+    const cover = roomCover(room.name);
     return (
         <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick}
             style={{ background: "#1a1a1a", border: `1px solid ${hov ? "rgba(255,255,255,.22)" : "rgba(255,255,255,.07)"}`, borderRadius: 12, overflow: "hidden", width: 180, cursor: "pointer", transition: "all .2s", transform: hov ? "translateY(-4px)" : "none", boxShadow: hov ? "0 16px 40px rgba(0,0,0,.5)" : "none" }}>
-            <div style={{ height: 110, background: `linear-gradient(135deg,${col}66,${col}22)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ fontSize: 36, opacity: .7 }}>💬</span>
+            <div style={{ height: 110, overflow: "hidden", position: "relative" }}>
+                <img src={cover} alt={room.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
             </div>
             <div style={{ padding: "10px 12px 14px" }}>
                 <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: "0 0 3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{room.name}</p>
@@ -478,7 +479,7 @@ function Sidebar({ active, setActive, onLogout }: { active: Nav; setActive: (n: 
         <aside style={{ width: 180, minHeight: "100vh", background: "#111", borderRight: "1px solid rgba(255,255,255,.07)", display: "flex", flexDirection: "column", flexShrink: 0 }}>
             <div style={{ padding: "20px 20px 28px", display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ color: "#fff", fontWeight: 800, fontSize: 20 }}>Orbit</span>
-                <span style={{ fontSize: 20 }}>🌀</span>
+                <img src={tubeImg} alt="orbit" style={{ height: 28, width: 56, objectFit: "cover", borderRadius: 8, display: "block" }} />
             </div>
             <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, padding: "0 10px" }}>
                 {NAV.map(item => (

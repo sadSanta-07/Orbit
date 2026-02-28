@@ -481,7 +481,9 @@ export default function Home() {
                 </p>
 
                 <div className="flex items-center gap-6 flex-wrap">
-                    <button className="flex items-center gap-3 bg-white text-black text-sm font-medium px-6 py-3 rounded-full hover:bg-white/90 active:scale-95 transition-all shadow-lg">
+                    <button
+                        onClick={() => setShowRegister(true)} className="flex items-center gap-3 bg-white text-black text-sm font-medium px-6 py-3 rounded-full hover:bg-white/90 active:scale-95 transition-all shadow-lg">
+
                         Create Your room now!
                         <span className="text-base">→</span>
                     </button>

@@ -451,8 +451,8 @@ export default function Home() {
                 </div>
             </nav>
 
-            <main className="relative z-10 flex flex-col justify-end min-h-[calc(100vh-140px)] pb-24 px-8">
-                <h1 className="text-white text-4xl sm:text-5xl font-bold leading-tight max-w-md mb-4 drop-shadow-lg">
+            <main className="relative z-10 flex flex-col justify-end min-h-[calc(100vh-140px)] pb-20 px-8">
+                <h1 className="text-white text-3xl sm:text-5xl font-bold leading-tight max-w-md mb-4 drop-shadow-lg">
                     Beyond Distractions. Enter<br />
                     Your Orbit of Deep{" "}
                     <em
@@ -475,7 +475,7 @@ export default function Home() {
 
                 <div className="flex items-center gap-6 flex-wrap">
                     <button
-                        onClick={() => setShowRegister(true)} className="flex items-center gap-3 bg-white text-black text-sm font-medium px-6 py-3 rounded-full hover:bg-white/90 active:scale-95 transition-all shadow-lg">
+                        onClick={() => setShowRegister(true)} className="flex items-center gap-3 bg-white text-black text-sm font-medium px-6 py-3 rounded-lg hover:bg-white/90 active:scale-95 transition-all shadow-lg">
 
                         Create Your room now!
                         <span className="text-base">→</span>
@@ -503,14 +503,14 @@ export default function Home() {
             <div className="relative z-10 border-t border-white/10 bg-black/50 backdrop-blur-sm px-8 py-4">
                 <div className="flex items-center justify-around flex-wrap gap-4">
                     {techItems.map((item, i) => (
-                        <div key={i} className="flex items-center gap-2 text-white/75 text-sm">
-                            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <div key={i} className="flex items-center gap-2 text-white/50 text-md font-semibold">
+                            {/* <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path
                                     d="M12 2C8.13 2 6 3.93 6 6.87c0 1.94.97 3.3 2.91 4.07C7.08 11.7 6 13.12 6 15.13 6 18.07 8.13 20 12 20s6-1.93 6-4.87c0-2.01-1.08-3.43-2.91-4.19C17.03 10.17 18 8.81 18 6.87 18 3.93 15.87 2 12 2Z"
                                     fill="currentColor"
                                     opacity="0.7"
                                 />
-                            </svg>
+                            </svg> */}
                             <span>{item}</span>
                         </div>
                     ))}

@@ -239,7 +239,7 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                     });
                     setMessages(msgs);
                 }
-            } catch {  }
+            } catch { }
             finally { setLoadingMsgs(false); }
         };
         load();
@@ -275,21 +275,25 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
         inputRef.current?.focus();
     };
 
+    const palFn = (name: string) => {
+        const pal = ["#7c3aed", "#0ea5e9", "#f59e0b", "#10b981", "#ef4444", "#ec4899"];
+        return pal[name.charCodeAt(0) % pal.length];
+    };
+
     return (
         <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden" }}>
 
-
             <div style={{ width: 195, background: "#111", borderRight: "1px solid rgba(255,255,255,0.07)", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
-
-                <div style={{ height: 145, background: "linear-gradient(135deg,#7c3aed55,#0ea5e944)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <span style={{ fontSize: 46, opacity: .65 }}>💬</span>
+                <div style={{ height: 145, background: `linear-gradient(135deg,${palFn(room.name)}55,${palFn(room.name)}22)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 50, opacity: .55 }}>💬</span>
                 </div>
 
-                <div style={{ padding: "12px 14px 8px" }}>
-                    <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: "0 0 2px" }}>{room.name}</p>
-                    <p style={{ color: "rgba(255,255,255,.28)", fontSize: 10, margin: 0, fontFamily: "monospace" }}>#{room.roomCode}</p>
+                <div style={{ padding: "12px 14px 6px" }}>
+                    <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: "0 0 5px" }}>{room.name}</p>
+                    <p style={{ color: "rgba(255,255,255,.32)", fontSize: 11, margin: 0, lineHeight: 1.5 }}>A room to collaborate, code and vibe with your team.</p>
                 </div>
-                <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,.06)", margin: "0 14px 8px" }} />
+
+                <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,.07)", margin: "10px 14px 6px" }} />
 
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 8px" }}>
                     {onlineUsers.length === 0
@@ -297,11 +301,12 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                         : onlineUsers.map((u, i) => {
                             const me = u.username === myUsername;
                             return (
-                                <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, background: me ? "#16a34a" : "rgba(255,255,255,0.06)", borderRadius: 8, padding: "7px 9px", marginBottom: 5, transition: "background .15s" }}>
-                                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: `hsl(${u.username.charCodeAt(0) * 37},55%,50%)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+                                <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, background: me ? "#16a34a" : "rgba(255,255,255,0.06)", borderRadius: 8, padding: "7px 9px", marginBottom: 5 }}>
+                                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: `hsl(${u.username.charCodeAt(0) * 37},55%,50%)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
                                         {u.username.charAt(0).toUpperCase()}
                                     </div>
-                                    <span style={{ color: "#fff", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.username}</span>
+                                    <span style={{ color: "#fff", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{u.username}</span>
+                                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }} />
                                 </div>
                             );
                         })
@@ -309,19 +314,21 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                 </div>
 
                 <div style={{ padding: "8px 8px 18px" }}>
-                    <button onClick={onBack}
-                        style={{ width: "100%", background: "rgba(180,30,30,.2)", border: "1px solid rgba(220,50,50,.3)", borderRadius: 8, color: "#f87171", padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    <button onClick={onBack} style={{ width: "100%", background: "rgba(180,30,30,.22)", border: "1px solid rgba(220,50,50,.35)", borderRadius: 8, color: "#f87171", padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                         Delete Room
                     </button>
                 </div>
             </div>
 
-
-            <div style={{ width: codeOpen ? 340 : undefined, flex: codeOpen ? "0 0 340px" : 1, display: "flex", flexDirection: "column", overflow: "hidden", transition: "flex .2s", minWidth: 0 }}>
-
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
                 <div style={{ height: 52, borderBottom: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
                     <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Chatbox</span>
-                    <span style={{ background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 6, padding: "3px 10px", color: "rgba(255,255,255,.55)", fontSize: 12 }}>{room.name}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 6, padding: "3px 10px", color: "rgba(255,255,255,.55)", fontSize: 12 }}>{room.name}</span>
+                        <button type="button" onClick={() => setCodeOpen(v => !v)} style={{ background: codeOpen ? "rgba(124,58,237,.25)" : "rgba(255,255,255,.08)", border: codeOpen ? "1px solid rgba(124,58,237,.5)" : "1px solid rgba(255,255,255,.12)", borderRadius: 6, color: codeOpen ? "#c4b5fd" : "rgba(255,255,255,.6)", padding: "3px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>
+                            {codeOpen ? "✕ Code" : "</> Code"}
+                        </button>
+                    </div>
                 </div>
 
                 <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -341,13 +348,7 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                                 <span style={{ fontSize: 10, marginBottom: 3, color: orbit ? "#a78bfa" : "rgba(255,255,255,.38)", fontWeight: orbit ? 700 : 400 }}>
                                     {orbit ? "🤖 Orbit AI" : name}
                                 </span>
-                                <div style={{
-                                    background: mine ? "#fff" : orbit ? "rgba(124,58,237,.18)" : "rgba(255,255,255,.07)",
-                                    color: mine ? "#111" : "#fff",
-                                    border: orbit ? "1px solid rgba(124,58,237,.4)" : "none",
-                                    borderRadius: mine ? "14px 14px 4px 14px" : "4px 14px 14px 14px",
-                                    padding: "9px 13px", fontSize: 13, maxWidth: 300, lineHeight: 1.55, wordBreak: "break-word",
-                                }}>
+                                <div style={{ background: mine ? "#fff" : orbit ? "rgba(124,58,237,.18)" : "rgba(255,255,255,.07)", color: mine ? "#111" : "#fff", border: orbit ? "1px solid rgba(124,58,237,.4)" : "none", borderRadius: mine ? "14px 14px 4px 14px" : "4px 14px 14px 14px", padding: "9px 13px", fontSize: 13, maxWidth: 300, lineHeight: 1.55, wordBreak: "break-word" }}>
                                     {msg.content}
                                 </div>
                                 <span style={{ fontSize: 9, color: "rgba(255,255,255,.18)", marginTop: 3 }}>
@@ -359,27 +360,10 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                     <div ref={bottomRef} />
                 </div>
 
-                <form onSubmit={send} style={{ borderTop: "1px solid rgba(255,255,255,.07)", padding: "11px 16px", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                    <input
-                        ref={inputRef}
-                        value={input}
-                        onChange={e => setInput(e.target.value)}
-                        placeholder="Type Something...."
-                        style={{ flex: 1, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: "10px 14px", color: "#fff", fontSize: 13, outline: "none", fontFamily: "inherit" }}
-                    />
-                    <button type="button" onClick={() => setCodeOpen(v => !v)}
-                        style={{
-                            background: codeOpen ? "rgba(124,58,237,.25)" : "#fff",
-                            color: codeOpen ? "#a78bfa" : "#000",
-                            border: codeOpen ? "1px solid rgba(124,58,237,.5)" : "none",
-                            borderRadius: 10, padding: "10px 16px", fontWeight: 700, fontSize: 12,
-                            cursor: "pointer", whiteSpace: "nowrap", transition: "all .2s",
-                        }}>
-                        {codeOpen ? "Close codebox" : "Open codebox"}
-                    </button>
+                <form onSubmit={send} style={{ borderTop: "1px solid rgba(255,255,255,.07)", padding: "12px 16px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+                    <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} placeholder="Type Something....." style={{ flex: 1, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: "11px 16px", color: "#fff", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
                 </form>
             </div>
-
 
             {codeOpen && (
                 <CodeEditor roomCode={room.roomCode} socket={socketRef.current} />
@@ -532,7 +516,7 @@ export default function Chatroom() {
             const res = await fetch(`${API_BASE}/api/rooms/my`, { headers: hdrs() });
             const data = await res.json();
             if (res.ok) setRooms(Array.isArray(data.data) ? data.data : []);
-        } catch {  }
+        } catch { }
         finally { setLoading(false); }
     };
     useEffect(() => { fetchRooms(); }, []);
@@ -584,17 +568,48 @@ export default function Chatroom() {
 
 
                 {nav === "Profile" && (
-                    <div style={{ padding: 32, color: "#fff" }}>
-                        <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Profile</h2>
-                        <div style={{ background: "#1a1a1a", borderRadius: 14, padding: 28, border: "1px solid rgba(255,255,255,.08)", maxWidth: 440 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-                                <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg,#7c3aed,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700 }}>{username.charAt(0).toUpperCase()}</div>
-                                <div>
-                                    <p style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>{username}</p>
-                                    <p style={{ color: "rgba(255,255,255,.4)", fontSize: 12, margin: "4px 0 0" }}>Orbit Member · {rooms.length} room{rooms.length !== 1 ? "s" : ""}</p>
+                    <div style={{ padding: "28px 32px", color: "#fff", overflowY: "auto", flex: 1 }}>
+                        <div style={{ background: "#1a1a1a", borderRadius: 16, border: "1px solid rgba(255,255,255,.08)", padding: "28px 32px", maxWidth: 760 }}>
+                            <div style={{ display: "flex", gap: 28, alignItems: "flex-start", marginBottom: 28 }}>
+                                <div style={{ width: 130, height: 130, borderRadius: 14, background: "linear-gradient(135deg,#7c3aed,#db2777)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 52, fontWeight: 900, color: "#fff" }}>
+                                    {username.charAt(0).toUpperCase()}
+                                </div>
+                                <div style={{ flex: 1, display: "flex", gap: 0, alignItems: "stretch" }}>
+                                    <div style={{ flex: 1, paddingRight: 28 }}>
+                                        <p style={{ fontSize: 24, fontWeight: 700, margin: "0 0 8px" }}>Hie, <span>{username}</span></p>
+                                        <p style={{ color: "rgba(255,255,255,.45)", fontSize: 13, lineHeight: 1.65, margin: 0, maxWidth: 300 }}>
+                                            Curious builder crafting intelligent developer tools, blending real-time collaboration, AI, and clean design to create meaningful tech experiences.
+                                        </p>
+                                    </div>
+                                    <div style={{ width: 1, background: "rgba(255,255,255,.08)", flexShrink: 0 }} />
+                                    <div style={{ paddingLeft: 28, display: "flex", flexDirection: "column", gap: 10, justifyContent: "center" }}>
+                                        <p style={{ color: "rgba(255,255,255,.42)", fontSize: 13, margin: 0 }}>{username.toLowerCase()}@orbit.dev</p>
+                                        <p style={{ color: "rgba(255,255,255,.42)", fontSize: 13, margin: 0 }}>India</p>
+                                        <p style={{ color: "rgba(255,255,255,.42)", fontSize: 13, margin: 0 }}>Profile created on – {new Date().toLocaleDateString("en-IN")}</p>
+                                    </div>
                                 </div>
                             </div>
-                            <p style={{ color: "rgba(255,255,255,.4)", fontSize: 13 }}>More profile settings coming soon.</p>
+                            <p style={{ fontWeight: 700, fontSize: 18, margin: "0 0 16px" }}>Your Activity</p>
+                            <div style={{ display: "flex", gap: 14, marginBottom: 28 }}>
+                                {[
+                                    { label: "Total Group\njoined", value: rooms.length },
+                                    { label: "Total Time Spent\nin hr", value: Math.max(1, rooms.length * 2) },
+                                    { label: "Total code lines\nwritten", value: rooms.length * 84 },
+                                ].map(stat => (
+                                    <div key={stat.label} style={{ flex: 1, background: "#111", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: "16px 20px" }}>
+                                        <p style={{ color: "rgba(255,255,255,.45)", fontSize: 12, whiteSpace: "pre-line", margin: "0 0 8px", lineHeight: 1.4 }}>{stat.label}</p>
+                                        <p style={{ color: "#fff", fontSize: 42, fontWeight: 800, margin: 0, letterSpacing: -1 }}>{stat.value}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ display: "flex", gap: 14 }}>
+                                <button style={{ background: "rgba(180,30,30,.22)", border: "1px solid rgba(220,50,50,.35)", borderRadius: 10, color: "#f87171", padding: "10px 24px", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+                                    Delete Account
+                                </button>
+                                <button style={{ background: "#fff", border: "none", borderRadius: 24, color: "#000", padding: "10px 36px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                                    Edit
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

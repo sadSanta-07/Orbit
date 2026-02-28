@@ -3,12 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 
 /* ─── constants ─────────────────────────────────────────────────────────── */
-const API_BASE = "https://bcc1-59-144-72-89.ngrok-free.app";
+const API_BASE = "https://orbit-ozih.onrender.com";
 
 const hdrs = () => ({
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("orbit_token") || ""}`,
-    "ngrok-skip-browser-warning": "true",
 });
 const getUsername = () => localStorage.getItem("orbit_username") || "User";
 const getToken = () => localStorage.getItem("orbit_token") || "";

@@ -11,7 +11,7 @@ const avatars = [
 
 const techItems = ["Google", "Microsoft", "Stripe", "Amazon"];
 
-const API_BASE = "https://bcc1-59-144-72-89.ngrok-free.app";
+const API_BASE = "https://orbit-ozih.onrender.com";
 
 /* ─── Register Modal ────────────────────────────────────────────────────── */
 function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {

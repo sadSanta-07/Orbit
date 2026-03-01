@@ -32,7 +32,7 @@ export default function Home() {
             <Navbar onShowRegister={() => setShowRegister(true)} onShowLogin={() => setShowLogin(true)} />
 
             <main className="relative z-10 flex flex-col justify-end flex-grow pb-20 px-10  overflow-hidden">
-                <h1 className="text-white text-3xl sm:text-4xl font-bold leading-tight max-w-md mb-4 drop-shadow-lg">
+                <h1 className="text-white text-4xl sm:text-5xl font-bold leading-tight max-w-md mb-4 drop-shadow-lg">
                     Beyond Distractions.Enter<br />
                     Your Orbit of Deep{" "}
                     <em

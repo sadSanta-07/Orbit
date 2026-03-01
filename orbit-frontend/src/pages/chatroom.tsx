@@ -47,45 +47,95 @@ function resolveName(
 
 interface CodeEditorProps { roomCode: string; socket: Socket | null; }
 
+const CURSOR_PAL = ["#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f87171", "#fb923c", "#e879f9", "#60a5fa"];
+function curCol(name: string) {
+    return CURSOR_PAL[name.split("").reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % CURSOR_PAL.length];
+}
+
+interface CursorInfo { pos: number; color: string; }
+interface PixelPos { x: number; y: number; }
+
 function CodeEditor({ roomCode, socket }: CodeEditorProps) {
     const [code, setCode] = useState("// Start coding here…\n");
     const [langIdx, setLangIdx] = useState(0);
     const [output, setOutput] = useState("");
     const [running, setRunning] = useState(false);
     const [showLangMenu, setShowLangMenu] = useState(false);
+    const [remoteCursors, setRemoteCursors] = useState<Map<string, CursorInfo>>(new Map());
+    const [cursorPixels, setCursorPixels] = useState<Map<string, PixelPos>>(new Map());
+    const [hoveredCursor, setHoveredCursor] = useState<string | null>(null);
+
     const suppressSync = useRef(false);
     const taRef = useRef<HTMLTextAreaElement>(null);
+    const mirrorRef = useRef<HTMLDivElement>(null);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const codeRef = useRef(code);
+    codeRef.current = code;
+    const myUsername = getUsername();
 
+    const computePixelPos = useCallback((charOffset: number, currentCode: string): PixelPos | null => {
+        const mirror = mirrorRef.current;
+        const wrapper = wrapperRef.current;
+        const ta = taRef.current;
+        if (!mirror || !wrapper || !ta) return null;
+        const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/ /g, "\u00a0").replace(/\n/g, "<br>");
+        mirror.innerHTML = esc(currentCode.substring(0, charOffset)) + '<span id="mc-c" style="display:inline-block;width:0;height:1em;"></span>' + esc(currentCode.substring(charOffset));
+        const caret = mirror.querySelector("#mc-c") as HTMLElement | null;
+        if (!caret) return null;
+        const wRect = wrapper.getBoundingClientRect();
+        const cRect = caret.getBoundingClientRect();
+        return { x: cRect.left - wRect.left, y: (cRect.top - wRect.top) - ta.scrollTop };
+    }, []);
+
+    const recomputePixels = useCallback((cursors: Map<string, CursorInfo>, currentCode: string) => {
+        const pixels = new Map<string, PixelPos>();
+        cursors.forEach((info, username) => {
+            const px = computePixelPos(info.pos, currentCode);
+            if (px) pixels.set(username, px);
+        });
+        setCursorPixels(new Map(pixels));
+    }, [computePixelPos]);
+
+    useEffect(() => {
+        recomputePixels(remoteCursors, code);
+    }, [remoteCursors, code, recomputePixels]);
 
     useEffect(() => {
         if (!socket) return;
-        const onSyncCode = ({ code: incoming }: { code: string }) => {
+        const handle = ({ code: incoming, cursorPos, username }: { code: string; cursorPos?: number; username?: string }) => {
             suppressSync.current = true;
+            if (cursorPos !== undefined && username && username !== myUsername) {
+                setRemoteCursors(rc => {
+                    const next = new Map(rc);
+                    next.set(username, { pos: cursorPos, color: curCol(username) });
+                    return next;
+                });
+            }
             setCode(incoming);
             setTimeout(() => { suppressSync.current = false; }, 50);
         };
-        const onCodeChange = ({ code: incoming }: { code: string }) => {
-            suppressSync.current = true;
-            setCode(incoming);
-            setTimeout(() => { suppressSync.current = false; }, 50);
-        };
-        socket.on("sync_code", onSyncCode);
-        socket.on("code_change", onCodeChange);
-        return () => { socket.off("sync_code", onSyncCode); socket.off("code_change", onCodeChange); };
-    }, [socket]);
-
+        socket.on("sync_code", handle);
+        socket.on("code_change", handle);
+        return () => { socket.off("sync_code", handle); socket.off("code_change", handle); };
+    }, [socket, myUsername]);
 
     const emitChange = useCallback((newCode: string) => {
         if (!socket || suppressSync.current) return;
-        socket.emit("code_change", { roomCode, code: newCode });
-    }, [socket, roomCode]);
+        const pos = taRef.current?.selectionStart ?? 0;
+        socket.emit("code_change", { roomCode, code: newCode, cursorPos: pos, username: myUsername });
+    }, [socket, roomCode, myUsername]);
+
+    const emitCursor = useCallback(() => {
+        if (!socket) return;
+        const pos = taRef.current?.selectionStart ?? 0;
+        socket.emit("code_change", { roomCode, code: codeRef.current, cursorPos: pos, username: myUsername });
+    }, [socket, roomCode, myUsername]);
 
     const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const val = e.target.value;
         setCode(val);
         emitChange(val);
     };
-
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Tab") {
@@ -98,11 +148,8 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
             emitChange(newVal);
             requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 4; });
         }
-        if (e.key === "Escape") {
-            emitChange(code);
-        }
+        if (e.key === "Escape") { emitChange(code); }
     };
-
 
     const runCode = async () => {
         if (running || !code.trim()) return;
@@ -117,12 +164,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
             const data = await res.json();
             if (res.ok && data.output) {
                 const out = data.output;
-                setOutput(
-                    out.output ??
-                    out.stderr ??
-                    out.error ??
-                    JSON.stringify(out, null, 2)
-                );
+                setOutput(out.output ?? out.stderr ?? out.error ?? JSON.stringify(out, null, 2));
             } else {
                 setOutput(data?.message || "Compilation failed.");
             }
@@ -131,17 +173,18 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
         } finally { setRunning(false); }
     };
 
+    const lineHeightPx = 13.5 * 1.65;
+
     return (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", borderLeft: "1px solid rgba(255,255,255,0.07)", overflow: "hidden", minWidth: 0 }}>
+            <style>{`
+                @keyframes cursorBlink { 0%,100%{opacity:1} 50%{opacity:0} }
+            `}</style>
 
             <div style={{ height: 52, borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
                 <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Code editor</span>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
-
-                    <button
-                        onClick={() => setShowLangMenu(v => !v)}
-                        style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, color: "rgba(255,255,255,0.7)", fontSize: 12, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit" }}
-                    >
+                    <button onClick={() => setShowLangMenu(v => !v)} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, color: "rgba(255,255,255,0.7)", fontSize: 12, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit" }}>
                         {LANGUAGES[langIdx].label} ▾
                     </button>
                     {showLangMenu && (
@@ -154,34 +197,71 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
                             ))}
                         </div>
                     )}
-
-                    <button onClick={runCode} disabled={running}
-                        style={{ background: running ? "#444" : "#22c55e", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, fontSize: 13, padding: "5px 16px", cursor: running ? "not-allowed" : "pointer", transition: "background .2s" }}>
+                    <button onClick={runCode} disabled={running} style={{ background: running ? "#444" : "#22c55e", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, fontSize: 13, padding: "5px 16px", cursor: running ? "not-allowed" : "pointer", transition: "background .2s" }}>
                         {running ? "…" : "Run"}
                     </button>
                 </div>
             </div>
 
-
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div ref={wrapperRef} style={{ position: "relative", flex: output ? "0 0 60%" : 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-                <textarea
-                    ref={taRef}
-                    value={code}
-                    onChange={handleCodeChange}
-                    onKeyDown={handleKeyDown}
-                    spellCheck={false}
-                    style={{
-                        flex: output ? "0 0 60%" : 1,
-                        background: "#111", color: "#e2e8f0",
-                        border: "none", outline: "none", resize: "none",
-                        padding: "16px 20px", fontSize: 13.5,
+                    <div ref={mirrorRef} aria-hidden="true" style={{
+                        position: "absolute", top: 0, left: 0, width: "100%",
+                        padding: "16px 20px", fontSize: 13.5, boxSizing: "border-box",
                         fontFamily: "'Fira Code','Cascadia Code','Consolas','Courier New',monospace",
-                        lineHeight: 1.65, tabSize: 4,
-                        transition: "flex .2s",
-                    }}
-                />
+                        lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                        visibility: "hidden", pointerEvents: "none", zIndex: 0,
+                    }} />
 
+                    {Array.from(cursorPixels.entries()).map(([username, { x, y }]) => {
+                        const info = remoteCursors.get(username);
+                        if (!info) return null;
+                        return (
+                            <div key={username} style={{
+                                position: "absolute", left: x, top: y, width: 2,
+                                height: lineHeightPx, background: info.color,
+                                zIndex: 10, pointerEvents: "all", cursor: "default",
+                                animation: "cursorBlink 1s step-end infinite",
+                            }}
+                                onMouseEnter={() => setHoveredCursor(username)}
+                                onMouseLeave={() => setHoveredCursor(null)}
+                            >
+                                {hoveredCursor === username && (
+                                    <div style={{
+                                        position: "absolute", bottom: "100%", left: 0,
+                                        background: info.color, color: "#000", fontSize: 10,
+                                        fontWeight: 700, padding: "2px 6px", borderRadius: "4px 4px 4px 0",
+                                        whiteSpace: "nowrap", marginBottom: 2, pointerEvents: "none",
+                                    }}>
+                                        {username}
+                                    </div>
+                                )}
+                                <div style={{ position: "absolute", top: 0, left: 0, width: 8, height: 8, borderRadius: "0 4px 4px 4px", background: info.color, transform: "translateY(-100%)" }} />
+                            </div>
+                        );
+                    })}
+
+                    <textarea
+                        ref={taRef}
+                        value={code}
+                        onChange={handleCodeChange}
+                        onKeyDown={handleKeyDown}
+                        onKeyUp={emitCursor}
+                        onClick={emitCursor}
+                        onSelect={emitCursor}
+                        onScroll={() => recomputePixels(remoteCursors, codeRef.current)}
+                        spellCheck={false}
+                        style={{
+                            flex: 1, background: "#111", color: "#e2e8f0",
+                            border: "none", outline: "none", resize: "none",
+                            padding: "16px 20px", fontSize: 13.5,
+                            fontFamily: "'Fira Code','Cascadia Code','Consolas','Courier New',monospace",
+                            lineHeight: 1.65, tabSize: 4, transition: "flex .2s",
+                            position: "relative", zIndex: 1,
+                        }}
+                    />
+                </div>
 
                 {output && (
                     <div style={{ flex: 1, borderTop: "1px solid rgba(255,255,255,0.07)", background: "#0a0a0a", padding: "12px 20px", overflowY: "auto", minHeight: 0 }}>
@@ -196,7 +276,6 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
                 )}
             </div>
 
-
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", padding: "8px 20px", color: "rgba(255,255,255,0.2)", fontSize: 11, display: "flex", justifyContent: "flex-end", flexShrink: 0 }}>
                 • press esc for exit ( code will be saved auto )
             </div>
@@ -204,6 +283,10 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
     );
 }
 
+
+
+const COVERS = ["/cock.jpg", "/meow.jpg"];
+function roomCover(name: string) { return COVERS[name.charCodeAt(0) % COVERS.length]; }
 
 function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
     const myUsername = getUsername();
@@ -219,9 +302,7 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const seenIds = useRef<Set<string>>(new Set());
-
     const idMap = useRef<Map<string, string>>(new Map());
-
 
     useEffect(() => {
         const load = async () => {
@@ -231,7 +312,6 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                 const data = await res.json();
                 if (res.ok) {
                     const msgs: Msg[] = data.data ?? [];
-
                     msgs.forEach(m => {
                         seenIds.current.add(m._id);
                         if (typeof m.senderId === "object" && m.senderId._id) {
@@ -240,32 +320,24 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                     });
                     setMessages(msgs);
                 }
-            } catch (err) {
-                console.error("failed to load messages:", err);
-            }
+            } catch { }
             finally { setLoadingMsgs(false); }
         };
         load();
     }, [room._id]);
 
-
     useEffect(() => {
         const socket = io(API_BASE, { auth: { token }, transports: ["websocket", "polling"] });
         socketRef.current = socket;
-
         socket.on("connect", () => socket.emit("join_room", room.roomCode));
-
         socket.on("receive_message", (msg: Msg) => {
             if (seenIds.current.has(msg._id)) return;
             seenIds.current.add(msg._id);
             setMessages(prev => [...prev, msg]);
         });
-
         socket.on("online_users", (users: { username: string; socketId: string }[]) => setOnlineUsers(users));
-
         return () => { socket.disconnect(); };
     }, [room.roomCode, token]);
-
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -278,23 +350,17 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
         inputRef.current?.focus();
     };
 
-
-
     return (
         <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden" }}>
-
             <div style={{ width: 195, background: "#111", borderRight: "1px solid rgba(255,255,255,0.07)", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
                 <div style={{ height: 145, overflow: "hidden", flexShrink: 0 }}>
                     <img src={roomCover(room.name)} alt={room.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
                 </div>
-
                 <div style={{ padding: "12px 14px 6px" }}>
                     <p style={{ color: "#fff", fontWeight: 700, fontSize: 14, margin: "0 0 5px" }}>{room.name}</p>
                     <p style={{ color: "rgba(255,255,255,.32)", fontSize: 11, margin: 0, lineHeight: 1.5 }}>A room to collaborate, code and vibe with your team.</p>
                 </div>
-
                 <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,.07)", margin: "10px 14px 6px" }} />
-
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 8px" }}>
                     {onlineUsers.length === 0
                         ? <p style={{ color: "rgba(255,255,255,.2)", fontSize: 11, padding: "6px 6px" }}>No one online…</p>
@@ -312,7 +378,6 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                         })
                     }
                 </div>
-
                 <div style={{ padding: "8px 8px 18px" }}>
                     <button onClick={onBack} style={{ width: "100%", background: "rgba(180,30,30,.22)", border: "1px solid rgba(220,50,50,.35)", borderRadius: 8, color: "#f87171", padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                         Delete Room
@@ -330,7 +395,6 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                         </button>
                     </div>
                 </div>
-
                 <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
                     {loadingMsgs && <p style={{ color: "rgba(255,255,255,.22)", fontSize: 13, textAlign: "center", marginTop: 40 }}>Loading messages…</p>}
                     {!loadingMsgs && messages.length === 0 && (
@@ -359,7 +423,6 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                     })}
                     <div ref={bottomRef} />
                 </div>
-
                 <form onSubmit={send} style={{ borderTop: "1px solid rgba(255,255,255,.07)", padding: "12px 16px", display: "flex", alignItems: "center", flexShrink: 0 }}>
                     <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} placeholder="Type Something....." style={{ flex: 1, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: "11px 16px", color: "#fff", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
                 </form>
@@ -373,8 +436,8 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
 }
 
 
-const COVERS = ["/cock.jpg", "/meow.jpg"];
-function roomCover(name: string) { return COVERS[name.charCodeAt(0) % COVERS.length]; }
+
+
 
 function RoomCard({ room, onClick }: { room: Room; onClick: () => void }) {
     const [hov, setHov] = useState(false);

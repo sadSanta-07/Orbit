@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import tubeImg from "../assets/tube.jpg";
@@ -90,6 +90,16 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
     const codeRef = useRef(code);
     codeRef.current = code;
     const myUsername = getUsername();
+    const pendingCursor = useRef<{ start: number; end: number } | null>(null);
+
+    useLayoutEffect(() => {
+        if (pendingCursor.current && taRef.current) {
+            taRef.current.selectionStart = pendingCursor.current.start;
+            taRef.current.selectionEnd = pendingCursor.current.end;
+            pendingCursor.current = null;
+            suppressSync.current = false;
+        }
+    });
 
     const computePixelPos = useCallback((charOffset: number, currentCode: string): PixelPos | null => {
         const mirror = mirrorRef.current;
@@ -138,30 +148,21 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
                 const savedEnd = ta?.selectionEnd ?? savedStart;
                 suppressSync.current = true;
                 setCode(curr => applyOp(curr, op));
-                requestAnimationFrame(() => {
-                    if (ta) {
-                        ta.selectionStart = shiftCursor(savedStart, op);
-                        ta.selectionEnd = shiftCursor(savedEnd, op);
-                    }
-                    suppressSync.current = false;
-                });
+                pendingCursor.current = { start: shiftCursor(savedStart, op), end: shiftCursor(savedEnd, op) };
             } else if (incoming && incoming !== codeRef.current) {
                 const prevCode = codeRef.current;
                 const savedStart = ta?.selectionStart ?? 0;
                 const savedEnd = ta?.selectionEnd ?? savedStart;
                 suppressSync.current = true;
                 setCode(incoming);
-                requestAnimationFrame(() => {
-                    if (ta) {
-                        const delta = incoming.length - prevCode.length;
-                        let changeAt = 0;
-                        const minLen = Math.min(incoming.length, prevCode.length);
-                        while (changeAt < minLen && incoming[changeAt] === prevCode[changeAt]) changeAt++;
-                        ta.selectionStart = changeAt <= savedStart ? Math.max(0, Math.min(savedStart + delta, incoming.length)) : Math.min(savedStart, incoming.length);
-                        ta.selectionEnd = changeAt <= savedEnd ? Math.max(0, Math.min(savedEnd + delta, incoming.length)) : Math.min(savedEnd, incoming.length);
-                    }
-                    suppressSync.current = false;
-                });
+                const delta = incoming.length - prevCode.length;
+                let changeAt = 0;
+                const minLen = Math.min(incoming.length, prevCode.length);
+                while (changeAt < minLen && incoming[changeAt] === prevCode[changeAt]) changeAt++;
+                pendingCursor.current = {
+                    start: changeAt <= savedStart ? Math.max(0, Math.min(savedStart + delta, incoming.length)) : Math.min(savedStart, incoming.length),
+                    end: changeAt <= savedEnd ? Math.max(0, Math.min(savedEnd + delta, incoming.length)) : Math.min(savedEnd, incoming.length),
+                };
             }
         };
         socket.on("sync_code", handle);

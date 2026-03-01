@@ -47,6 +47,24 @@ function resolveName(
 
 interface CodeEditorProps { roomCode: string; socket: Socket | null; }
 
+interface Op { pos: number; del: number; ins: string; }
+function computeOp(oldCode: string, newCode: string): Op {
+    let start = 0;
+    while (start < oldCode.length && start < newCode.length && oldCode[start] === newCode[start]) start++;
+    let oldEnd = oldCode.length;
+    let newEnd = newCode.length;
+    while (oldEnd > start && newEnd > start && oldCode[oldEnd - 1] === newCode[newEnd - 1]) { oldEnd--; newEnd--; }
+    return { pos: start, del: oldEnd - start, ins: newCode.slice(start, newEnd) };
+}
+function applyOp(code: string, op: Op): string {
+    return code.slice(0, op.pos) + op.ins + code.slice(op.pos + op.del);
+}
+function shiftCursor(cursor: number, op: Op): number {
+    if (op.pos >= cursor) return cursor;
+    if (op.pos + op.del <= cursor) return cursor - op.del + op.ins.length;
+    return op.pos + op.ins.length;
+}
+
 const CURSOR_PAL = ["#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f87171", "#fb923c", "#e879f9", "#60a5fa"];
 function curCol(name: string) {
     return CURSOR_PAL[name.split("").reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % CURSOR_PAL.length];
@@ -102,7 +120,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
 
     useEffect(() => {
         if (!socket) return;
-        const handle = ({ code: incoming, cursorPos, username: senderName }: { code: string; cursorPos?: number; username?: string }) => {
+        const handle = ({ op, code: incoming, cursorPos, username: senderName }: { op?: Op; code?: string; cursorPos?: number; username?: string }) => {
             if (senderName === myUsername) return;
 
             if (cursorPos !== undefined && senderName) {
@@ -114,59 +132,54 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
             }
 
             const ta = taRef.current;
-            const prevCode = codeRef.current;
 
-            if (incoming === prevCode) return;
-
-            const savedStart = ta?.selectionStart ?? 0;
-            const savedEnd = ta?.selectionEnd ?? savedStart;
-
-            suppressSync.current = true;
-            setCode(incoming);
-
-            requestAnimationFrame(() => {
-                if (ta) {
-                    const delta = incoming.length - prevCode.length;
-                    let changeAt = 0;
-                    const minLen = Math.min(incoming.length, prevCode.length);
-                    while (changeAt < minLen && incoming[changeAt] === prevCode[changeAt]) changeAt++;
-                    const newStart = changeAt <= savedStart ? Math.max(0, Math.min(savedStart + delta, incoming.length)) : Math.min(savedStart, incoming.length);
-                    const newEnd = changeAt <= savedEnd ? Math.max(0, Math.min(savedEnd + delta, incoming.length)) : Math.min(savedEnd, incoming.length);
-                    ta.selectionStart = newStart;
-                    ta.selectionEnd = newEnd;
-                }
-                suppressSync.current = false;
-            });
-        };
-        const handleCursorOnly = ({ cursorPos, username: senderName }: { cursorPos?: number; username?: string }) => {
-            if (!senderName || senderName === myUsername || cursorPos === undefined) return;
-            setRemoteCursors(rc => {
-                const next = new Map(rc);
-                next.set(senderName, { pos: cursorPos, color: curCol(senderName) });
-                return next;
-            });
+            if (op) {
+                const savedStart = ta?.selectionStart ?? 0;
+                const savedEnd = ta?.selectionEnd ?? savedStart;
+                suppressSync.current = true;
+                setCode(curr => applyOp(curr, op));
+                requestAnimationFrame(() => {
+                    if (ta) {
+                        ta.selectionStart = shiftCursor(savedStart, op);
+                        ta.selectionEnd = shiftCursor(savedEnd, op);
+                    }
+                    suppressSync.current = false;
+                });
+            } else if (incoming && incoming !== codeRef.current) {
+                const prevCode = codeRef.current;
+                const savedStart = ta?.selectionStart ?? 0;
+                const savedEnd = ta?.selectionEnd ?? savedStart;
+                suppressSync.current = true;
+                setCode(incoming);
+                requestAnimationFrame(() => {
+                    if (ta) {
+                        const delta = incoming.length - prevCode.length;
+                        let changeAt = 0;
+                        const minLen = Math.min(incoming.length, prevCode.length);
+                        while (changeAt < minLen && incoming[changeAt] === prevCode[changeAt]) changeAt++;
+                        ta.selectionStart = changeAt <= savedStart ? Math.max(0, Math.min(savedStart + delta, incoming.length)) : Math.min(savedStart, incoming.length);
+                        ta.selectionEnd = changeAt <= savedEnd ? Math.max(0, Math.min(savedEnd + delta, incoming.length)) : Math.min(savedEnd, incoming.length);
+                    }
+                    suppressSync.current = false;
+                });
+            }
         };
         socket.on("sync_code", handle);
         socket.on("code_change", handle);
-        socket.on("cursor_pos", handleCursorOnly);
-        return () => {
-            socket.off("sync_code", handle);
-            socket.off("code_change", handle);
-            socket.off("cursor_pos", handleCursorOnly);
-        };
-
+        return () => { socket.off("sync_code", handle); socket.off("code_change", handle); };
     }, [socket, myUsername]);
 
     const emitChange = useCallback((newCode: string) => {
         if (!socket || suppressSync.current) return;
         const pos = taRef.current?.selectionStart ?? 0;
-        socket.emit("code_change", { roomCode, code: newCode, cursorPos: pos, username: myUsername });
+        const op = computeOp(codeRef.current, newCode);
+        socket.emit("code_change", { roomCode, op, code: newCode, cursorPos: pos, username: myUsername });
     }, [socket, roomCode, myUsername]);
 
     const emitCursor = useCallback(() => {
         if (!socket) return;
         const pos = taRef.current?.selectionStart ?? 0;
-        socket.emit("cursor_pos", { roomCode, cursorPos: pos, username: myUsername });
+        socket.emit("code_change", { roomCode, cursorPos: pos, username: myUsername });
     }, [socket, roomCode, myUsername]);
 
     const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {

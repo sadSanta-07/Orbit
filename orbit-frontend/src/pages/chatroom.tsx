@@ -102,21 +102,44 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
 
     useEffect(() => {
         if (!socket) return;
-        const handle = ({ code: incoming, cursorPos, username }: { code: string; cursorPos?: number; username?: string }) => {
-            suppressSync.current = true;
-            if (cursorPos !== undefined && username && username !== myUsername) {
+        const handle = ({ code: incoming, cursorPos, username: senderName }: { code: string; cursorPos?: number; username?: string }) => {
+            if (senderName === myUsername) return;
+
+            if (cursorPos !== undefined && senderName) {
                 setRemoteCursors(rc => {
                     const next = new Map(rc);
-                    next.set(username, { pos: cursorPos, color: curCol(username) });
+                    next.set(senderName, { pos: cursorPos, color: curCol(senderName) });
                     return next;
                 });
             }
+
+            const ta = taRef.current;
+            const prevCode = codeRef.current;
+            const savedStart = ta?.selectionStart ?? 0;
+            const savedEnd = ta?.selectionEnd ?? savedStart;
+
+            suppressSync.current = true;
             setCode(incoming);
-            setTimeout(() => { suppressSync.current = false; }, 50);
+
+            requestAnimationFrame(() => {
+                if (ta && incoming !== prevCode) {
+                    const delta = incoming.length - prevCode.length;
+                    let changeAt = 0;
+                    const minLen = Math.min(incoming.length, prevCode.length);
+                    while (changeAt < minLen && incoming[changeAt] === prevCode[changeAt]) changeAt++;
+
+                    const newStart = changeAt <= savedStart ? Math.max(0, Math.min(savedStart + delta, incoming.length)) : Math.min(savedStart, incoming.length);
+                    const newEnd = changeAt <= savedEnd ? Math.max(0, Math.min(savedEnd + delta, incoming.length)) : Math.min(savedEnd, incoming.length);
+                    ta.selectionStart = newStart;
+                    ta.selectionEnd = newEnd;
+                }
+                suppressSync.current = false;
+            });
         };
         socket.on("sync_code", handle);
         socket.on("code_change", handle);
         return () => { socket.off("sync_code", handle); socket.off("code_change", handle); };
+
     }, [socket, myUsername]);
 
     const emitChange = useCallback((newCode: string) => {

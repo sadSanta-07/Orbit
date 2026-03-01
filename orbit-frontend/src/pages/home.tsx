@@ -4,7 +4,7 @@ import saturnBg from "../assets/saturn.jpg";
 import RegisterModal from "../modals/RegisterModal";
 import LoginModal from "../modals/LoginModal";
 import Footer from "../components/footer";
-import Navbar from "../components/navbar";
+import Navbar from "../components/Navbar";
 
 const avatars = [
     "https://i.pravatar.cc/32?img=1",

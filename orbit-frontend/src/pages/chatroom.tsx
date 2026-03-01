@@ -240,7 +240,9 @@ function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
                     });
                     setMessages(msgs);
                 }
-            } catch { }
+            } catch (err) {
+                console.error("failed to load messages:", err);
+            }
             finally { setLoadingMsgs(false); }
         };
         load();
@@ -517,7 +519,9 @@ export default function Chatroom() {
             const res = await fetch(`${API_BASE}/api/rooms/my`, { headers: hdrs() });
             const data = await res.json();
             if (res.ok) setRooms(Array.isArray(data.data) ? data.data : []);
-        } catch { }
+        } catch (err) {
+            console.error("failed to load messages:", err);
+        }
         finally { setLoading(false); }
     };
     useEffect(() => { fetchRooms(); }, []);

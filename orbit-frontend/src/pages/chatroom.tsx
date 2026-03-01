@@ -115,6 +115,9 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
 
             const ta = taRef.current;
             const prevCode = codeRef.current;
+
+            if (incoming === prevCode) return;
+
             const savedStart = ta?.selectionStart ?? 0;
             const savedEnd = ta?.selectionEnd ?? savedStart;
 
@@ -122,12 +125,11 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
             setCode(incoming);
 
             requestAnimationFrame(() => {
-                if (ta && incoming !== prevCode) {
+                if (ta) {
                     const delta = incoming.length - prevCode.length;
                     let changeAt = 0;
                     const minLen = Math.min(incoming.length, prevCode.length);
                     while (changeAt < minLen && incoming[changeAt] === prevCode[changeAt]) changeAt++;
-
                     const newStart = changeAt <= savedStart ? Math.max(0, Math.min(savedStart + delta, incoming.length)) : Math.min(savedStart, incoming.length);
                     const newEnd = changeAt <= savedEnd ? Math.max(0, Math.min(savedEnd + delta, incoming.length)) : Math.min(savedEnd, incoming.length);
                     ta.selectionStart = newStart;
@@ -136,9 +138,22 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
                 suppressSync.current = false;
             });
         };
+        const handleCursorOnly = ({ cursorPos, username: senderName }: { cursorPos?: number; username?: string }) => {
+            if (!senderName || senderName === myUsername || cursorPos === undefined) return;
+            setRemoteCursors(rc => {
+                const next = new Map(rc);
+                next.set(senderName, { pos: cursorPos, color: curCol(senderName) });
+                return next;
+            });
+        };
         socket.on("sync_code", handle);
         socket.on("code_change", handle);
-        return () => { socket.off("sync_code", handle); socket.off("code_change", handle); };
+        socket.on("cursor_pos", handleCursorOnly);
+        return () => {
+            socket.off("sync_code", handle);
+            socket.off("code_change", handle);
+            socket.off("cursor_pos", handleCursorOnly);
+        };
 
     }, [socket, myUsername]);
 
@@ -151,7 +166,7 @@ function CodeEditor({ roomCode, socket }: CodeEditorProps) {
     const emitCursor = useCallback(() => {
         if (!socket) return;
         const pos = taRef.current?.selectionStart ?? 0;
-        socket.emit("code_change", { roomCode, code: codeRef.current, cursorPos: pos, username: myUsername });
+        socket.emit("cursor_pos", { roomCode, cursorPos: pos, username: myUsername });
     }, [socket, roomCode, myUsername]);
 
     const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {

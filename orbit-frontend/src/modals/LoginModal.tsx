@@ -161,5 +161,4 @@ function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
     );
 }
 
-
-export default LoginModal
+export default LoginModal;

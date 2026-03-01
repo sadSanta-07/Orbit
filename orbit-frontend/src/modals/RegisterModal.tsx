@@ -248,5 +248,4 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     );
 }
 
-
-export default RegisterModal
+export default RegisterModal;

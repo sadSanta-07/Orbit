@@ -1,14 +1,22 @@
+import { useState } from "react";
+import Aboutcard from "../modals/aboutcard";
+import Helpcard from "../modals/helpcard";
+
 interface NavbarProps {
     onShowRegister: () => void;
     onShowLogin: () => void;
 }
 
 const Navbar = ({ onShowRegister, onShowLogin }: NavbarProps) => {
+    const [showAbout, setShowAbout] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
+
     return (
+        <>
         <nav className="relative z-10 flex items-center justify-between px-8 py-5 flex-shrink-0">
             <div className="flex gap-8 text-sm text-white/85">
-                <a href="#" className="hover:text-white transition-colors">About us</a>
-                <a href="#" className="hover:text-white transition-colors">Help</a>
+                <button onClick={() => setShowAbout(true)} className="hover:text-white transition-colors">About us</button>
+                <button onClick={() => setShowHelp(true)} className="hover:text-white transition-colors">Help</button>
             </div>
 
             <span className="absolute left-1/2 -translate-x-1/2 text-white text-xl font-semibold tracking-wide">
@@ -44,6 +52,10 @@ const Navbar = ({ onShowRegister, onShowLogin }: NavbarProps) => {
                 </button>
             </div>
         </nav>
+        
+        {showAbout && <Aboutcard onClose={() => setShowAbout(false)} />}
+        {showHelp && <Helpcard onClose={() => setShowHelp(false)} />}
+        </>
     )
 }
 

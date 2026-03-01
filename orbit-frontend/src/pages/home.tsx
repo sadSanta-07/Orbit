@@ -5,7 +5,6 @@ import RegisterModal from "../modals/RegisterModal";
 import LoginModal from "../modals/LoginModal";
 import Footer from "../components/footer";
 import Navbar from "../components/Navbar";
-
 const avatars = [
     "https://i.pravatar.cc/32?img=1",
     "https://i.pravatar.cc/32?img=2",
@@ -32,9 +31,9 @@ export default function Home() {
 
             <Navbar onShowRegister={() => setShowRegister(true)} onShowLogin={() => setShowLogin(true)} />
 
-            <main className="relative z-10 flex flex-col justify-end flex-grow pb-24 px-8 overflow-hidden">
-                <h1 className="text-white text-4xl sm:text-5xl font-bold leading-tight max-w-md mb-4 drop-shadow-lg">
-                    Beyond Distractions. Enter<br />
+            <main className="relative z-10 flex flex-col justify-end flex-grow pb-20 px-10  overflow-hidden">
+                <h1 className="text-white text-3xl sm:text-4xl font-bold leading-tight max-w-md mb-4 drop-shadow-lg">
+                    Beyond Distractions.Enter<br />
                     Your Orbit of Deep{" "}
                     <em
                         className="not-italic"
@@ -48,7 +47,7 @@ export default function Home() {
                     </em>
                 </h1>
 
-                <p className="text-white/70 text-sm max-w-sm mb-8 leading-relaxed">
+                <p className="text-white/60 text-sm max-w-sm mb-8 leading-relaxed">
                     Orbit is a real-time collaborative web-based coding platform where developers can write and edit code
                     together in the same environment, communicate instantly through integrated chat, and receive contextual AI
                     assistance that analyzes discussions
@@ -56,7 +55,7 @@ export default function Home() {
 
                 <div className="flex items-center gap-6 flex-wrap">
                     <button
-                        onClick={() => setShowRegister(true)} className="flex items-center gap-3 bg-white text-black text-sm font-medium px-6 py-3 rounded-full hover:bg-white/90 active:scale-95 transition-all shadow-lg">
+                        onClick={() => setShowRegister(true)} className="flex items-center gap-3 bg-white text-black text-sm font-medium px-6 py-3 rounded-lg hover:bg-white/90 active:scale-95 transition-all shadow-lg">
 
                         Create Your room now!
                         <span className="text-base">→</span>

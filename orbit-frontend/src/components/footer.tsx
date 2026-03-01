@@ -1,6 +1,7 @@
 const Footer = () => {
     return (
         <div className="relative z-10 border-t border-white/10 px-8 py-5">
+            {/* <p className="text-white/70 text-sm">© 2024 Orbit. All rights reserved.</p> */}
             <div className="flex items-center justify-around flex-wrap gap-6">
 
                 <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity">
@@ -39,7 +40,10 @@ const Footer = () => {
                 </div>
 
             </div>
+
+            
         </div>
+        
     )
 }
 

@@ -194,6 +194,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                             disabled={loading}
                             style={{
                                 flex: 1,
+                                marginTop:"8px",
                                 background: loading ? "rgba(255,255,255,0.5)" : "#fff",
                                 color: "#000",
                                 border: "none",
@@ -207,7 +208,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                         >
                             {loading ? "Registering…" : "Register"}
                         </button>
-                        <button
+                        {/* <button
                             type="button"
                             style={{
                                 flex: 1,
@@ -229,7 +230,7 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                             }
                         >
                             Google
-                        </button>
+                        </button> */}
                     </div>
                 </form>
 

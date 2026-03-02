@@ -53,6 +53,7 @@ function LoginModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: ()
             } else {
                 localStorage.setItem("orbit_token", data.data.token);
                 localStorage.setItem("orbit_username", data.data.user?.username || "");
+                localStorage.setItem("orbit_userId", data.data.user?.id || "");
                 onSuccess();
             }
         } catch {

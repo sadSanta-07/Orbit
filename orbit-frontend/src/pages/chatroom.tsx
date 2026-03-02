@@ -15,13 +15,12 @@ const API_BASE = import.meta.env.VITE_API_BASE;
 export default function Chatroom() {
     const navigate = useNavigate();
     const username = getUsername();
-    const userId = localStorage.getItem("orbit_userId") || "";
-
     const [nav, setNav] = useState<Nav>("Lobby");
     const [activeRoom, setActiveRoom] = useState<Room | null>(null);
     const [showCreate, setShowCreate] = useState(false);
     const [showJoin, setShowJoin] = useState(false);
     const [profilePic, setProfilePic] = useState("");
+    const [userId, setUserId] = useState(localStorage.getItem("orbit_userId") || "");
 
     const { rooms, loading, addRoom, removeRoom } = useRooms();
 
@@ -36,8 +35,13 @@ export default function Chatroom() {
         })
             .then(r => r.json())
             .then(data => {
-                if (data.success && data.user?.profilePic) {
-                    setProfilePic(data.user.profilePic);
+                if (data.success && data.user) {
+                    if (data.user.profilePic) setProfilePic(data.user.profilePic);
+                    // Save userId so isCreator check works even for sessions before this was stored
+                    if (data.user._id) {
+                        localStorage.setItem("orbit_userId", data.user._id);
+                        setUserId(data.user._id);
+                    }
                 }
             })
             .catch(() => { });

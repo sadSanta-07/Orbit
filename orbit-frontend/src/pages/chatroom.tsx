@@ -63,7 +63,7 @@ export default function Chatroom() {
                 )}
 
                 {/* ── Profile ── */}
-                {nav === "Profile" && <ProfilePage username={username} rooms={rooms} />}
+                {nav === "Profile" && <ProfilePage username={username} rooms={rooms} onLogout={logout} />}
 
                 {/* ── Settings ── */}
                 {nav === "Settings" && (

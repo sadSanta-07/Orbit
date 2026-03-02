@@ -1,3 +1,8 @@
+import { Response } from "express";
+import mongoose from "mongoose";
+import Room from "../models/Room";
+import { AuthRequest } from "../middleware/authmiddleware";
+
 const generateRoomCode = () => {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let code = "";
@@ -7,15 +12,9 @@ const generateRoomCode = () => {
   return code;
 };
 
-
-import { Response } from "express";
-import Room from "../models/Room";
-import { AuthRequest } from "../middleware/authmiddleware";
-
 export const createRoom = async (req: AuthRequest, res: Response) => {
   try {
     const { name } = req.body;
-    const userId = req.user.userId;
 
     if (!name) {
       return res.status(400).json({
@@ -23,6 +22,8 @@ export const createRoom = async (req: AuthRequest, res: Response) => {
         message: "Room name is required",
       });
     }
+
+    const userId = new mongoose.Types.ObjectId(req.user!.userId);
 
     let roomCode = generateRoomCode();
 
@@ -53,7 +54,8 @@ export const createRoom = async (req: AuthRequest, res: Response) => {
 export const joinRoom = async (req: AuthRequest, res: Response) => {
   try {
     const { roomCode } = req.body;
-    const userId = req.user.userId;
+
+    const userId = new mongoose.Types.ObjectId(req.user!.userId);
 
     const room = await Room.findOne({ roomCode });
 
@@ -64,7 +66,12 @@ export const joinRoom = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    if (!room.members.includes(userId)) {
+    // IMPORTANT: ObjectId comparison must use .equals()
+    const alreadyMember = room.members.some(member =>
+      member.equals(userId)
+    );
+
+    if (!alreadyMember) {
       room.members.push(userId);
       await room.save();
     }
@@ -82,10 +89,9 @@ export const joinRoom = async (req: AuthRequest, res: Response) => {
   }
 };
 
-
 export const getMyRooms = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user.userId;
+    const userId = new mongoose.Types.ObjectId(req.user!.userId);
 
     const rooms = await Room.find({
       members: userId,

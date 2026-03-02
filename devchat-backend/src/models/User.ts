@@ -5,6 +5,7 @@ export interface IUser extends Document {
   email: string;
   password: string;
   profilePic?: string;
+  bio: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +30,11 @@ const UserSchema = new Schema<IUser>(
       type: String,
       required: [true, "Password is required"],
       minlength: [6, "Password must be at least 6 characters"],
+    },
+    bio: {
+      type: String,
+      maxlength: 200,
+      default: "",
     },
     profilePic: {
       type: String,

@@ -1,8 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
+interface JwtPayload {
+  userId: string;
+  username: string;
+}
+
 export interface AuthRequest extends Request {
-  user?: any;
+  user?: JwtPayload;
 }
 
 export const protect = (
@@ -12,7 +17,7 @@ export const protect = (
 ) => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  if (!authHeader?.startsWith("Bearer ")) {
     return res.status(401).json({
       success: false,
       message: "Unauthorized",
@@ -25,14 +30,15 @@ export const protect = (
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET as string
-    );
+    ) as JwtPayload;
 
     req.user = decoded;
+
     next();
   } catch (error) {
     return res.status(401).json({
       success: false,
-      message: "Invalid token",
+      message: "Invalid or expired token",
     });
   }
 };

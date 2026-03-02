@@ -5,7 +5,19 @@ import { useMessages } from "../chatroom/hooks/useMessages";
 import { useSocket } from "../chatroom/hooks/useSocket";
 import CodeEditor from "./CodeEditor";
 
-export default function ChatView({ room, onBack }: { room: Room; onBack: () => void }) {
+const API_BASE = import.meta.env.VITE_API_BASE;
+
+export default function ChatView({
+    room,
+    onBack,
+    onDeleted,
+    currentUserId,
+}: {
+    room: Room;
+    onBack: () => void;
+    onDeleted?: (roomId: string) => void;
+    currentUserId?: string;
+}) {
     const myUsername = getUsername();
     const token = getToken();
 
@@ -14,8 +26,30 @@ export default function ChatView({ room, onBack }: { room: Room; onBack: () => v
 
     const [input, setInput] = useState("");
     const [codeOpen, setCodeOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [confirmDel, setConfirmDel] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    const isCreator = currentUserId && room.createdBy === currentUserId;
+
+    const handleDelete = async () => {
+        if (!confirmDel) { setConfirmDel(true); return; }
+        setDeleting(true);
+        try {
+            const res = await fetch(`${API_BASE}/api/rooms/${room._id}`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${getToken()}` },
+            });
+            const data = await res.json();
+            if (data.success) {
+                onDeleted?.(room._id);
+                onBack();
+            }
+        } catch (_) { }
+        setDeleting(false);
+        setConfirmDel(false);
+    };
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -54,10 +88,30 @@ export default function ChatView({ room, onBack }: { room: Room; onBack: () => v
                         ))
                     }
                 </div>
-                <div style={{ padding: "8px 8px 18px" }}>
-                    <button onClick={onBack} style={{ width: "100%", background: "rgba(180,30,30,.22)", border: "1px solid rgba(220,50,50,.35)", borderRadius: 8, color: "#f87171", padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                        Delete Room
-                    </button>
+                <div style={{ padding: "8px 8px 18px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    {isCreator ? (
+                        <button
+                            onClick={handleDelete}
+                            disabled={deleting}
+                            style={{
+                                width: "100%",
+                                background: confirmDel ? "rgba(220,38,38,.85)" : "rgba(180,30,30,.22)",
+                                border: confirmDel ? "1px solid #ef4444" : "1px solid rgba(220,50,50,.35)",
+                                borderRadius: 8, color: confirmDel ? "#fff" : "#f87171",
+                                padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: deleting ? "not-allowed" : "pointer",
+                                transition: "all .15s",
+                            }}
+                        >
+                            {deleting ? "Deleting…" : confirmDel ? "Sure? Tap again" : "Delete Room"}
+                        </button>
+                    ) : (
+                        <button
+                            onClick={onBack}
+                            style={{ width: "100%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, color: "rgba(255,255,255,.5)", padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                        >
+                            ← Leave
+                        </button>
+                    )}
                 </div>
             </div>
 

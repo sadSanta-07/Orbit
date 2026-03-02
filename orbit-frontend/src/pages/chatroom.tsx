@@ -90,7 +90,12 @@ export default function Chatroom() {
 
                 {nav === "Lobby" && activeRoom && (
                     <div style={{ flex: 1, display: "flex", overflow: "hidden", minWidth: 0 }}>
-                        <ChatView room={activeRoom} onBack={() => setActiveRoom(null)} />
+                        <ChatView
+                            room={activeRoom}
+                            onBack={() => setActiveRoom(null)}
+                            onDeleted={handleRoomDeleted}
+                            currentUserId={userId}
+                        />
                     </div>
                 )}
 

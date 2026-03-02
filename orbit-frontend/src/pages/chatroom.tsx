@@ -10,19 +10,38 @@ import { CreateModal, JoinModal } from "../components/Modal";
 import LobbyPage from "./LobbyPage";
 import ProfilePage from "./ProfilePage";
 
+const API_BASE = import.meta.env.VITE_API_BASE;
+
 export default function Chatroom() {
     const navigate = useNavigate();
     const username = getUsername();
+    const userId = localStorage.getItem("orbit_userId") || "";
 
     const [nav, setNav] = useState<Nav>("Lobby");
     const [activeRoom, setActiveRoom] = useState<Room | null>(null);
     const [showCreate, setShowCreate] = useState(false);
     const [showJoin, setShowJoin] = useState(false);
+    const [profilePic, setProfilePic] = useState("");
 
-    const { rooms, loading, addRoom } = useRooms();
+    const { rooms, loading, addRoom, removeRoom } = useRooms();
 
     // Redirect if not logged in
     useEffect(() => { if (!getToken()) navigate("/"); }, [navigate]);
+
+    // Fetch profile pic for the header avatar
+    useEffect(() => {
+        if (!getToken()) return;
+        fetch(`${API_BASE}/api/auth/me`, {
+            headers: { Authorization: `Bearer ${getToken()}` },
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.user?.profilePic) {
+                    setProfilePic(data.user.profilePic);
+                }
+            })
+            .catch(() => { });
+    }, []);
 
     const logout = () => {
         ["orbit_token", "orbit_username", "orbit_userId"].forEach(k => localStorage.removeItem(k));
@@ -30,6 +49,11 @@ export default function Chatroom() {
     };
 
     const handleNavChange = (n: Nav) => { setNav(n); setActiveRoom(null); };
+
+    const handleRoomDeleted = (roomId: string) => {
+        removeRoom(roomId);
+        if (activeRoom?._id === roomId) setActiveRoom(null);
+    };
 
     return (
         <div style={{ display: "flex", height: "100vh", background: "#0d0d0d", fontFamily: "'Inter','Segoe UI',sans-serif", overflow: "hidden" }}>
@@ -40,8 +64,14 @@ export default function Chatroom() {
                 <header style={{ height: 58, borderBottom: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 28px", gap: 12, flexShrink: 0 }}>
                     <span style={{ color: "rgba(255,255,255,.4)", fontSize: 14 }}>hie</span>
                     <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontStyle: "italic" }}>{username}</span>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#7c3aed,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff" }}>
-                        {username.charAt(0).toUpperCase()}
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", flexShrink: 0 }}>
+                        {profilePic ? (
+                            <img src={profilePic} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        ) : (
+                            <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg,#7c3aed,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff" }}>
+                                {username.charAt(0).toUpperCase()}
+                            </div>
+                        )}
                     </div>
                 </header>
 
@@ -53,6 +83,8 @@ export default function Chatroom() {
                         onRoomClick={setActiveRoom}
                         onCreateClick={() => setShowCreate(true)}
                         onJoinClick={() => setShowJoin(true)}
+                        onDelete={handleRoomDeleted}
+                        currentUserId={userId}
                     />
                 )}
 

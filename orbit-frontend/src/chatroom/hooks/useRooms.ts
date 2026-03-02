@@ -24,5 +24,8 @@ export function useRooms() {
     const addRoom = (room: Room) =>
         setRooms(prev => prev.find(r => r._id === room._id) ? prev : [...prev, room]);
 
-    return { rooms, loading, addRoom };
+    const removeRoom = (roomId: string) =>
+        setRooms(prev => prev.filter(r => r._id !== roomId));
+
+    return { rooms, loading, addRoom, removeRoom };
 }

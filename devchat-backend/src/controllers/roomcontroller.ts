@@ -1,6 +1,7 @@
 import { Response } from "express";
 import mongoose from "mongoose";
 import Room from "../models/Room";
+import Message from "../models/Message";
 import { AuthRequest } from "../middleware/authmiddleware";
 
 const generateRoomCode = () => {
@@ -105,6 +106,40 @@ export const getMyRooms = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Could not fetch rooms",
+    });
+  }
+};
+
+export const deleteRoom = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = new mongoose.Types.ObjectId(req.user!.userId);
+    const { roomId } = req.params;
+
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ success: false, message: "Room not found" });
+    }
+
+    // Only the creator can delete
+    if (!room.createdBy.equals(userId)) {
+      return res.status(403).json({ success: false, message: "Only the room creator can delete this room" });
+    }
+
+    // Delete all messages in this room first
+    await Message.deleteMany({ roomId: room._id });
+
+    // Delete the room
+    await Room.findByIdAndDelete(roomId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Room and all messages deleted successfully",
+    });
+  } catch (error) {
+    console.error("DELETE ROOM ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Room deletion failed",
     });
   }
 };

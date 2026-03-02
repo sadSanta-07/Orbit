@@ -2,6 +2,7 @@ import { Response } from "express";
 import multer from "multer";
 import cloudinary from "../config/cloudinary";
 import User from "../models/User";
+import Room from "../models/Room";
 import { AuthRequest } from "../middleware/authmiddleware";
 
 const storage = multer.memoryStorage();
@@ -93,11 +94,11 @@ export const updateProfile = async (
 ) => {
   try {
     const userId = req.user!.userId;
-    const { username, bio } = req.body;
+    const { username, bio, address } = req.body;
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { username, bio },
+      { username, bio, ...(address !== undefined && { address }) },
       { new: true }
     ).select("-password");
 
@@ -130,6 +131,63 @@ export const getMe = async (
     });
 
   } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+export const deleteAccount = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const userId = req.user!.userId;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // Remove profile pic from Cloudinary if it exists
+    if (user.profilePic) {
+      try {
+        // Extract public_id from Cloudinary URL
+        // e.g. https://res.cloudinary.com/<cloud>/image/upload/v123/orbit_profiles/abc.jpg
+        const parts = user.profilePic.split("/");
+        const uploadIdx = parts.indexOf("upload");
+        if (uploadIdx !== -1) {
+          // Skip the version segment (v123) if present
+          let publicIdParts = parts.slice(uploadIdx + 1);
+          if (publicIdParts[0]?.startsWith("v") && /^v\d+$/.test(publicIdParts[0])) {
+            publicIdParts = publicIdParts.slice(1);
+          }
+          const publicId = publicIdParts.join("/").replace(/\.[^/.]+$/, ""); // strip extension
+          await cloudinary.uploader.destroy(publicId);
+        }
+      } catch (cloudErr) {
+        console.error("Cloudinary delete error:", cloudErr);
+        // Continue with account deletion even if Cloudinary fails
+      }
+    }
+
+    // Remove user from all rooms they're a member of
+    await Room.updateMany(
+      { members: userId },
+      { $pull: { members: userId } }
+    );
+
+    // Delete the user
+    await User.findByIdAndDelete(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Account deleted successfully",
+    });
+
+  } catch (error) {
+    console.error("DELETE ACCOUNT ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Server error",

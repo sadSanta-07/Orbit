@@ -6,6 +6,7 @@ export interface IUser extends Document {
   password: string;
   profilePic?: string;
   bio: string;
+  address?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,6 +39,11 @@ const UserSchema = new Schema<IUser>(
     },
     profilePic: {
       type: String,
+      default: "",
+    },
+    address: {
+      type: String,
+      maxlength: 100,
       default: "",
     },
   },

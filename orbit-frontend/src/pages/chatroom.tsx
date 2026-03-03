@@ -61,14 +61,15 @@ export default function Chatroom() {
 
     return (
         <div style={{ display: "flex", height: "100vh", background: "#0d0d0d", fontFamily: "'Inter','Segoe UI',sans-serif", overflow: "hidden" }}>
-            <Sidebar active={nav} setActive={handleNavChange} onLogout={logout} />
+
+            {!activeRoom && <Sidebar active={nav} setActive={handleNavChange} onLogout={logout} />}
 
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
                 {/* Top header */}
                 <header style={{ height: 58, borderBottom: "1px solid rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 28px", gap: 12, flexShrink: 0 }}>
-                    <span style={{ color: "rgba(255,255,255,.4)", fontSize: 14 }}>hie</span>
-                    <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontStyle: "italic" }}>{username}</span>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", flexShrink: 0 }}>
+                    
+                    <span style={{ color: "#fff", fontWeight: 700, fontSize: 15,}}>Hi, {username} !!</span>
+                    <button onClick={()=>{setNav("Profile")}} style={{ width: 36, height: 36, borderRadius: "20%", overflow: "hidden", flexShrink: 0 }}>
                         {profilePic ? (
                             <img src={profilePic} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : (
@@ -76,7 +77,7 @@ export default function Chatroom() {
                                 {username.charAt(0).toUpperCase()}
                             </div>
                         )}
-                    </div>
+                    </button>
                 </header>
 
                 {/* ── Lobby ── */}

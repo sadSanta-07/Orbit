@@ -5,9 +5,9 @@ import img4 from './assets/bgrandom/4.jpg';
 import img5 from './assets/bgrandom/5.jpg';
 import img6 from './assets/bgrandom/6.jpg';
 
-const images = [img1, img2, img3, img4, img5, img6];
+const images: string[] = [img1, img2, img3, img4, img5, img6];
 
-export const randomimage = () => {
+export const randomimage = (): string => {
   const randomIndex = Math.floor(Math.random() * images.length);
   return images[randomIndex];
 };

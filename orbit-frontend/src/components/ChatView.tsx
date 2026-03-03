@@ -89,7 +89,7 @@ export default function ChatView({
                     }
                 </div>
                 <div style={{ padding: "8px 8px 18px", display: "flex", flexDirection: "column", gap: 6 }}>
-                    {isCreator ? (
+                    {isCreator && (
                         <button
                             onClick={handleDelete}
                             disabled={deleting}
@@ -104,14 +104,13 @@ export default function ChatView({
                         >
                             {deleting ? "Deleting…" : confirmDel ? "Sure? Tap again" : "Delete Room"}
                         </button>
-                    ) : (
-                        <button
-                            onClick={onBack}
-                            style={{ width: "100%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, color: "rgba(255,255,255,.5)", padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-                        >
-                            ← Leave
-                        </button>
                     )}
+                    <button
+                        onClick={onBack}
+                        style={{ width: "100%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, color: "rgba(255,255,255,.5)", padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                    >
+                        ← Leave
+                    </button>
                 </div>
             </div>
 

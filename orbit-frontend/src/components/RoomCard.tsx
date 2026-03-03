@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { Room } from "../chatroom/types";
-import { roomCover } from "../utils";
+//import { roomCover } from "../utils";
 import { getToken } from "../chatroom/types";
-
+import { randomimage } from "../getrandomimages";
 const PAL = ["#7c3aed", "#0ea5e9", "#f59e0b", "#10b981", "#ef4444", "#ec4899"];
 const API_BASE = import.meta.env.VITE_API_BASE;
 
@@ -20,7 +20,7 @@ export function RoomCard({
     const [hov, setHov] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [confirmDel, setConfirmDel] = useState(false);
-    const cover = roomCover(room.name);
+    const cover = randomimage();
 
     const isCreator = currentUserId && room.createdBy === currentUserId;
 
